@@ -50,10 +50,15 @@ class DetailActivity : AppCompatActivity() {
                 val sb = StringBuilder(entity.content)
                 if (entity.extra.isNotBlank()) {
                     try {
+                        var flag = false
                         val matcher = Pattern.compile("\\[\\^\\w+\\^]").matcher(entity.extra)
                         while (matcher.find()) {
                             val symbol = matcher.group(0)
                             if (symbol != null && !entity.content.contains(symbol)) {
+                                if (!flag) {
+                                    flag = true
+                                    sb.append("\n")
+                                }
                                 sb.append(symbol)
                             }
                         }
