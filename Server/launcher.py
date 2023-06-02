@@ -1,10 +1,10 @@
 import os
 import psutil
 import subprocess
-from flask import Flask
-from gevent import pywsgi
+import uvicorn
+from fastapi import FastAPI
 
-app = Flask(__name__)
+app = FastAPI()
 
 file_name = 'api.py'
 
@@ -40,12 +40,12 @@ def upgrade_and_run():
         if not is_running:
             run()
 
-@app.route('/upgrade')
+@app.get('/upgrade')
 def upgrade():
     upgrade_and_run()
     return 'upgrade'
 
-@app.route('/start')
+@app.get('/start')
 def start():
     is_running, proc = check_running()
     if is_running:
@@ -54,5 +54,4 @@ def start():
     return 'start'
 
 if __name__ == '__main__':
-    server = pywsgi.WSGIServer(('0.0.0.0',5001),app)
-    server.serve_forever()
+    uvicorn.run(app, host='0.0.0.0', port=5001)
