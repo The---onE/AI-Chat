@@ -207,7 +207,7 @@ async def bing_request(request: Request):
             if ref is not None:
                 response['ref'] = ''
                 quotes = message["adaptiveCards"][0]["body"]
-                if quotes.__len__() > 1:
+                if quotes.__len__() >= 1:
                     quotes = quotes[0]["text"]
                     split = quotes.find("\n\n")
                     quotes = quotes[:split]
