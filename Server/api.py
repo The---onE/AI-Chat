@@ -127,7 +127,7 @@ async def bing_main(prompt, conversationId=None, conversation_style=Conversation
             running.append(conversationId)
         
         # 与bot对话
-        response = await bot.ask(prompt, conversation_style=conversation_style)
+        response = await bot.ask(prompt, conversation_style=conversation_style, locale="en-US")
         bingLogger.info(response)
         # 解析response
         conversationId, answer, message = analysis_bing_response(response)
