@@ -4,7 +4,7 @@ import json
 import uvicorn
 import aiohttp
 from logging.handlers import TimedRotatingFileHandler
-from EdgeGPT import Chatbot, ConversationStyle
+from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 from fastapi import FastAPI, Query, Request
 
 app = FastAPI()
@@ -98,10 +98,16 @@ def analysis_bing_response(response):
         item = response.get('item')
         conversationId = item.get('conversationId')
         messages = item.get('messages')
+        message = None
+        answer = None
         if messages is not None and len(messages) > 1:
-            message = messages[1]
-            answer = message.get('text')
-        else:
+            for msg in messages:
+                if msg.get('author') == 'bot' and msg.get('messageType') is None:
+                    message = msg
+                    answer = message.get('text')
+                    break
+
+        if message is None:
             message = item.get('result').get('message')
             answer = message
 
@@ -127,8 +133,8 @@ async def bing_main(prompt, conversationId=None, conversation_style=Conversation
             running.append(conversationId)
         
         # 与bot对话
-        response = await bot.ask(prompt, conversation_style=conversation_style, locale="en-US")
-        bingLogger.info(response)
+        response = await bot.ask(prompt, conversation_style=conversation_style)
+        bingLogger.info(json.dumps(response, ensure_ascii=False))
         # 解析response
         conversationId, answer, message = analysis_bing_response(response)
 
@@ -209,18 +215,19 @@ async def bing_request(request: Request):
                 quotes = message["adaptiveCards"][0]["body"]
                 if quotes.__len__() >= 1:
                     quotes = quotes[0]["text"]
-                    split = quotes.find("\n\n")
-                    quotes = quotes[:split]
-                    quotes_ = []
-                    quotes = quotes.split("\n")
-                    count = 1
-                    for quote in quotes:
-                        quote = quote[quote.find(": ") + 2 :]
-                        s = quote.find(" ")
-                        quotes_.append(f"""[^{count}^]:[{quote[s+2:-1]}]({quote[:s]})""")
-                        count += 1
-                    quotes = "\n\n".join(quotes_)
-                    response['ref'] = quotes
+                    if quotes.startswith('[1]'):
+                        split = quotes.find("\n\n")
+                        quotes = quotes[:split]
+                        quotes_ = []
+                        quotes = quotes.split("\n")
+                        count = 1
+                        for quote in quotes:
+                            quote = quote[quote.find(": ") + 2 :]
+                            s = quote.find(" ")
+                            quotes_.append(f"""[^{count}^]:[{quote[s+2:-1]}]({quote[:s]})""")
+                            count += 1
+                        quotes = "\n\n".join(quotes_)
+                        response['ref'] = quotes
         except Exception as e:
             traceback.print_exc()
             bingLogger.exception(e)
