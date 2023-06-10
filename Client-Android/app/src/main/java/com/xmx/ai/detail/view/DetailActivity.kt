@@ -1,4 +1,7 @@
 package com.xmx.ai.detail.view
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.viewModels
@@ -50,11 +53,23 @@ class DetailActivity : AppCompatActivity() {
                 val sb = StringBuilder(entity.content)
                 if (entity.extra.isNotBlank()) {
                     try {
+                        val regex = Regex("^\\[\\^\\w+\\^]:.*")
+                        var index = 0
+                        while (index < sb.length) {
+                            val end = sb.indexOf("\n", index).let { if (it == -1) sb.length else it }
+                            val line = sb.substring(index, end)
+                            if (regex.matches(line)) {
+                                sb.deleteRange(index, end + 1)
+                            } else {
+                                index = end + 1
+                            }
+                        }
+
                         var flag = false
                         val matcher = Pattern.compile("\\[\\^\\w+\\^]").matcher(entity.extra)
                         while (matcher.find()) {
                             val symbol = matcher.group(0)
-                            if (symbol != null && !entity.content.contains(symbol)) {
+                            if (symbol != null && !sb.contains(symbol)) {
                                 if (!flag) {
                                     flag = true
                                     sb.append("\n")
@@ -87,7 +102,11 @@ class DetailActivity : AppCompatActivity() {
 //                    "font-size: 10px"
 //                )
                 binding.Content.addStyleSheet(css)
-                binding.Content.loadMarkdown(sb.toString())
+                val content = sb.toString()
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip: ClipData = ClipData.newPlainText("text", content)
+                clipboard.setPrimaryClip(clip)
+                binding.Content.loadMarkdown(content)
             }
         }
     }
