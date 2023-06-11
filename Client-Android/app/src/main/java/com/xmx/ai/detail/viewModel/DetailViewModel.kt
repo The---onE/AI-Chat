@@ -13,12 +13,12 @@ class DetailViewModel : ViewModel() {
 
     private val databaseRepository = DetailDatabaseRepository()
 
-    private var _contentList = MutableLiveData<List<ContentEntity>>()
-    val contentList: LiveData<List<ContentEntity>>
-        get() = _contentList
+    private var _content = MutableLiveData<ContentEntity>()
+    val content: LiveData<ContentEntity>
+        get() = _content
 
     fun initContentData(id: Long) = viewModelScope.launch(Dispatchers.IO) {
-        _contentList.postValue(databaseRepository.getContentData(id))
+        _content.postValue(databaseRepository.getContentData(id).firstOrNull())
     }
 
 }

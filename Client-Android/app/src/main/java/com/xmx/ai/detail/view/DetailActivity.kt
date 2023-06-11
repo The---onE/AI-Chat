@@ -47,9 +47,9 @@ class DetailActivity : AppCompatActivity() {
     fun loadContent(id : Long) {
         viewModel.initContentData(id)
 
-        viewModel.contentList.observe(this) {
-            if (it.isNotEmpty()) {
-                val entity = it.first()
+        viewModel.content.observe(this) {
+            if (it != null) {
+                val entity = it
                 val sb = StringBuilder(entity.content)
                 if (entity.extra.isNotBlank()) {
                     try {
