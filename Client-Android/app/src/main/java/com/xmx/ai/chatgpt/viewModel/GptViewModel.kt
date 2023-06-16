@@ -36,7 +36,7 @@ class GptViewModel : ViewModel() {
     val gptInsertCheck : LiveData<Boolean>
         get() = _gptInsertCheck
 
-    private val _maxContentSize = 2048
+    private val _maxContentSize = 8000
 
     fun postResponse(query : String, isContext : Boolean, system : String, roomId: Long, start: Int) = viewModelScope.launch {
 
@@ -102,11 +102,11 @@ class GptViewModel : ViewModel() {
         val jsonObject: JsonObject = JsonObject().apply{
             // params
             //addProperty("model", "text-davinci-003")
-            addProperty("model", "gpt-3.5-turbo")
+            addProperty("model", "gpt-3.5-turbo-16k")
             //addProperty("prompt", sb.toString())
             add("messages", message)
             addProperty("temperature", 0.9)
-            addProperty("max_tokens", 2000)
+            addProperty("max_tokens", _maxContentSize)
             addProperty("top_p", 1)
             addProperty("frequency_penalty", 0.0)
             addProperty("presence_penalty", 0.0)
