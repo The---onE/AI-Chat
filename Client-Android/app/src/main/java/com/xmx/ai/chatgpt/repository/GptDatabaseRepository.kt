@@ -15,9 +15,10 @@ class GptDatabaseRepository {
         content: String,
         user: Int,
         roomId: Long,
-        start: Int
+        start: Int,
+        extra: String = ""
     ) = database.contentDAO()
-        .insertContent(ContentEntity(0, roomId, start, 2, content, user, ""))
+        .insertContent(ContentEntity(0, roomId, start, 2, content, user, "", extra))
 
     fun deleteSelectedContent(id : Long) = database.contentDAO().deleteSelectedContent(id)
 

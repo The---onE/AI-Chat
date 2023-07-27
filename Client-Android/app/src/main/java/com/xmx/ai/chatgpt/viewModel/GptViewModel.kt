@@ -122,7 +122,15 @@ class GptViewModel : ViewModel() {
                 val tempJson = gson.toJson(response.choices.get(0))
                 val tempMessage = gson.fromJson(tempJson, GptMessage::class.java)
                 val tempGson = gson.fromJson(tempMessage.massage, GptContent::class.java)
-                tempGson.content?.let { insertContent(it, 1, true, roomId, 2) }
+                var extra = ""
+                if (response.choices.count() > 1) {
+                    val extraJson = gson.toJson(response.choices.get(1))
+                    val extraMessage = gson.fromJson(extraJson, GptMessage::class.java)
+                    val extraGson = gson.fromJson(extraMessage.massage, GptContent::class.java)
+                    if (extraGson.content != null)
+                        extra = extraGson.content
+                }
+                tempGson.content?.let { insertContent(it, 1, true, roomId, 2, extra) }
             }
         } catch (e : Exception) {
             insertContent(e.toString(), 1, false, roomId, 2)
@@ -150,8 +158,9 @@ class GptViewModel : ViewModel() {
                               ai: Int,
                               isContext: Boolean,
                               roomId: Long,
-                              start: Int) = viewModelScope.launch(Dispatchers.IO) {
-        val id = databaseRepository.insertContent(content, ai, roomId, start)
+                              start: Int,
+                              extra: String = "") = viewModelScope.launch(Dispatchers.IO) {
+        val id = databaseRepository.insertContent(content, ai, roomId, start, extra)
         if (ai == 1) {
             // GPT回复
             _gptInsertCheck.postValue(true)
