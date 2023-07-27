@@ -1,22 +1,35 @@
+import os
 import traceback
 import logging
 import json
 import uvicorn
 import aiohttp
 from logging.handlers import TimedRotatingFileHandler
+from fastapi import FastAPI, Query, Request, File, Form, UploadFile
+from fastapi.responses import HTMLResponse
+
 from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
-from fastapi import FastAPI, Query, Request
+
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import FAISS
+from langchain.chains import ConversationalRetrievalChain
 
 app = FastAPI()
 
-gptHandler = TimedRotatingFileHandler('log/gpt.log', 'midnight', encoding='utf-8')
+gptHandler = TimedRotatingFileHandler(
+    'log/gpt.log', 'midnight', encoding='utf-8')
 gptHandler.setLevel(logging.INFO)
 gptHandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 gptLogger = logging.getLogger('gpt')
 gptLogger.setLevel(logging.INFO)
 gptLogger.addHandler(gptHandler)
 
-bingHandler = TimedRotatingFileHandler('log/bing.log', 'midnight', encoding='utf-8')
+bingHandler = TimedRotatingFileHandler(
+    'log/bing.log', 'midnight', encoding='utf-8')
 bingHandler.setLevel(logging.INFO)
 bingHandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 bingLogger = logging.getLogger('bing')
@@ -26,10 +39,18 @@ bingLogger.addHandler(bingHandler)
 target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
 
+os.environ['OPENAI_API_KEY'] = authorization
+llm = ChatOpenAI(model="gpt-3.5-turbo-16k", temperature=0.9)
+text_splitter = RecursiveCharacterTextSplitter(
+    separators=['\n\n', '\n'], chunk_size=4000, chunk_overlap=350)
+embeddings = OpenAIEmbeddings(openai_api_key=authorization)
+context_prefix = 'f:'
+
 release = True
 
+
 @app.get('/uprelease')
-def update_release(r : str = Query(None)):
+def update_release(r: str = Query(None)):
     if r is not None:
         global release
         if (r == 'false'):
@@ -38,12 +59,14 @@ def update_release(r : str = Query(None)):
             release = True
     return str(release)
 
+
 @app.get('/ping')
 def ping():
     return str(release)
 
+
 @app.get('/upkey')
-def update_api_key(t : str = Query(None), v : str = Query(None)):
+def update_api_key(t: str = Query(None), v: str = Query(None)):
     type = t
     if type is not None:
         if (type == 'openai'):
@@ -54,15 +77,17 @@ def update_api_key(t : str = Query(None), v : str = Query(None)):
                 return 'OpenAI api key updated'
     return 'Update failed'
 
+
 @app.get('/getkey')
-def get_api_key(t : str = Query(None)):
+def get_api_key(t: str = Query(None)):
     type = t
     if type is not None:
         if (type == 'openai'):
             return authorization
     return 'Fetch failed'
 
-@app.post('/api/chatgpt')
+
+@app.post('/api/openai')
 async def gpt_request(request: Request):
     if not release:
         return {}
@@ -84,11 +109,158 @@ async def gpt_request(request: Request):
         return json
 
 
+@app.post('/api/chatgpt')
+async def gpt_langchain_request(request: Request):
+    if not release:
+        return {}
+
+    try:
+        body = await request.json()
+        gptLogger.info(body)
+
+        messages = body.get('messages')
+        result_content = ''
+        source_content = ''
+        if messages[0].get('role') == 'system' and messages[0].get('content').startswith(context_prefix):
+            content = messages[0].get('content')
+            context = content[len(context_prefix):]
+            db = FAISS.load_local('faissSave/' + context, embeddings)
+            qa = ConversationalRetrievalChain.from_llm(
+                llm, db.as_retriever(), return_source_documents=True)
+            chat_history = []
+            i = 1
+            while i < len(messages) - 1:
+                msg = messages[i]
+                role = msg.get('role')
+                query = msg.get('content')
+                i += 1
+                if role == 'user':
+                    msg = messages[i]
+                    role = msg.get('role')
+                    if role == 'assistant':
+                        answer = msg.get('content')
+                        chat_history.append((query, answer))
+                        i += 1
+
+            query = messages[-1].get('content')
+            content = {'question': query, 'chat_history': chat_history}
+            result = qa(content)
+            result_content = result['answer']
+            try:
+                source_content = result['source_documents'][0].page_content
+            except:
+                traceback.print_exc()
+                gptLogger.exception(e)
+
+        else:
+            contents = []
+            for msg in messages:
+                role = msg.get('role')
+                content = msg.get('content')
+                if role == 'user':
+                    contents.append(HumanMessage(content=content))
+                elif role == 'assistant':
+                    contents.append(AIMessage(content=content))
+                else:
+                    contents.append(SystemMessage(content=content))
+
+            result = llm(contents)
+            result_content = result.content
+
+        gptLogger.info(result_content)
+        gptLogger.info('')
+
+        choices = [{
+            'message': {
+                'role': 'assistant',
+                'content': result_content
+            }
+        }]
+
+        if source_content != '':
+            choices.append({
+                'message': {
+                    'role': 'assistant',
+                    'content': source_content
+                }
+            })
+
+        response = {
+            'choices': choices
+        }
+
+        return response
+
+    except Exception as e:
+        traceback.print_exc()
+        gptLogger.exception(e)
+        return {
+            'choices': [{
+                'message': {
+                    'role': 'assistant',
+                    'content': str(e)
+                }
+            }]
+        }
+
+
+@app.get("/upload/", response_class=HTMLResponse)
+async def upload_page():
+    return """
+    <html>
+        <head>
+            <title>Upload File</title>
+        </head>
+        <body>
+            <form action="/file" method="post" enctype="multipart/form-data">
+                <input type="text" name="index" placeholder="File Index"/>
+                <input type="file" name="file"/>
+                <button type="submit">Upload</button>
+            </form>
+        </body>
+    </html>
+    """
+
+
+@app.post("/file")
+async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
+    try:
+        ext = file.filename.split(".")[-1]
+        name = 'files/' + index + '.' + ext
+
+        content = await file.read()
+        with open(name, 'wb') as f:
+            f.write(content)
+
+        if ext == "txt":
+            loader = TextLoader(name, autodetect_encoding=True)
+        elif ext == "docx" or ext == "dox":
+            loader = Docx2txtLoader(name)
+        elif ext == "pdf":
+            loader = UnstructuredPDFLoader(name)
+        else:
+            return {"message": f"{file.filename} not support"}
+
+        data = loader.load()
+        text = data[0].page_content
+        docs = text_splitter.create_documents([text])
+        db = FAISS.from_documents(docs, embeddings)
+        db.save_local('faissSave/' + index)
+
+        return {"message": f"Save {index} from {file.filename}"}
+
+    except Exception as e:
+        traceback.print_exc()
+        gptLogger.exception(e)
+        return {"message": f"{e}"}
+
+
 id_queue = []
 running = []
 bots = {}
 max_id = 10
 max_remove = 10
+
 
 def analysis_bing_response(response):
     # 解析response
@@ -119,11 +291,13 @@ def analysis_bing_response(response):
         bingLogger.exception(e)
         return conversationId, str(e), message
 
+
 async def bing_main(prompt, conversationId=None, conversation_style=ConversationStyle.creative):
     try:
         # 读取bot
         if conversationId is None or bots.get(conversationId) is None:
-            cookies = json.loads(open('./cookies.json', encoding='utf-8').read())
+            cookies = json.loads(
+                open('./cookies.json', encoding='utf-8').read())
             bot = await Chatbot.create(cookies=cookies)
             # bot = Chatbot(cookie_path='./cookies.json')
             # bot = Chatbot()
@@ -131,9 +305,9 @@ async def bing_main(prompt, conversationId=None, conversation_style=Conversation
         else:
             bot = bots[conversationId]
             running.append(conversationId)
-        
+
         # 与bot对话
-        response = await bot.ask(prompt, conversation_style=conversation_style)
+        response = await bot.ask(prompt, conversation_style=conversation_style, locale='zh-cn')
         bingLogger.info(json.dumps(response, ensure_ascii=False))
         # 解析response
         conversationId, answer, message = analysis_bing_response(response)
@@ -156,17 +330,18 @@ async def bing_main(prompt, conversationId=None, conversation_style=Conversation
             bot = bots[id]
             if (id in running):
                 continue
-            
+
             bots.pop(id)
             id_queue.pop(0)
             await bot.close()
-        
+
         return conversationId, answer, message, response
     except Exception as e:
         traceback.print_exc()
         bingLogger.exception(e)
         return conversationId, str(e), None, None
-    
+
+
 @app.post('/api/bing')
 async def bing_request(request: Request):
     try:
@@ -222,9 +397,10 @@ async def bing_request(request: Request):
                         quotes = quotes.split("\n")
                         count = 1
                         for quote in quotes:
-                            quote = quote[quote.find(": ") + 2 :]
+                            quote = quote[quote.find(": ") + 2:]
                             s = quote.find(" ")
-                            quotes_.append(f"""[^{count}^]:[{quote[s+2:-1]}]({quote[:s]})""")
+                            quotes_.append(
+                                f"""[^{count}^]:[{quote[s+2:-1]}]({quote[:s]})""")
                             count += 1
                         quotes = "\n\n".join(quotes_)
                         response['ref'] = quotes
@@ -232,7 +408,7 @@ async def bing_request(request: Request):
             traceback.print_exc()
             bingLogger.exception(e)
             bingLogger.info('')
-        
+
         # 返回响应给客户端
         return response
     except Exception as e:
@@ -241,6 +417,6 @@ async def bing_request(request: Request):
         bingLogger.info('')
         return e
 
- 
+
 if __name__ == '__main__':
     uvicorn.run(app, host="0.0.0.0", port=5000)

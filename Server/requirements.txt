@@ -1,5 +1,8 @@
 aiohttp
 EdgeGPT
 fastapi
+langchain
 psutil
 uvicorn
+docx2txt
+unstructured
