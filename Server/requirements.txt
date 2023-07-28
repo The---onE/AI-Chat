@@ -6,3 +6,4 @@ psutil
 uvicorn
 docx2txt
 unstructured
+selenium

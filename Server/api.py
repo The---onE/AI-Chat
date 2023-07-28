@@ -2,6 +2,7 @@ import os
 import traceback
 import logging
 import json
+import hashlib
 import uvicorn
 import aiohttp
 from logging.handlers import TimedRotatingFileHandler
@@ -13,7 +14,7 @@ from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader
+from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
@@ -44,7 +45,10 @@ llm = ChatOpenAI(model="gpt-3.5-turbo-16k", temperature=0.9)
 text_splitter = RecursiveCharacterTextSplitter(
     separators=['\n\n', '\n'], chunk_size=4000, chunk_overlap=350)
 embeddings = OpenAIEmbeddings(openai_api_key=authorization)
+faiss_dir = 'faissSave/'
+file_dir = 'files/'
 context_prefix = 'f:'
+url_context_prefix = 'u:'
 
 release = True
 
@@ -109,6 +113,83 @@ async def gpt_request(request: Request):
         return json
 
 
+def langchain_request(messages):
+    contents = []
+    for msg in messages:
+        role = msg.get('role')
+        content = msg.get('content')
+        if role == 'user':
+            contents.append(HumanMessage(content=content))
+        elif role == 'assistant':
+            contents.append(AIMessage(content=content))
+        else:
+            contents.append(SystemMessage(content=content))
+
+    result = llm(contents)
+    return result.content, ''
+
+
+def based_request(messages, db):
+    qa = ConversationalRetrievalChain.from_llm(
+        llm, db.as_retriever(), return_source_documents=True)
+    chat_history = []
+    i = 1
+    while i < len(messages) - 1:
+        msg = messages[i]
+        role = msg.get('role')
+        query = msg.get('content')
+        i += 1
+        if role == 'user':
+            msg = messages[i]
+            role = msg.get('role')
+            if role == 'assistant':
+                answer = msg.get('content')
+                chat_history.append((query, answer))
+                i += 1
+
+    query = messages[-1].get('content')
+    content = {'question': query, 'chat_history': chat_history}
+    result = qa(content)
+    result_content = result['answer']
+    source_content = ''
+    try:
+        source_content = result['source_documents'][0].page_content
+    except Exception as e:
+        traceback.print_exc()
+        gptLogger.exception(e)
+    return result_content, source_content
+
+
+def file_base_request(messages):
+    content = messages[0].get('content')
+    context = content[len(context_prefix):]
+    db = FAISS.load_local(faiss_dir + context, embeddings)
+    return based_request(messages, db)
+
+
+def url_base_request(messages):
+    content = messages[0].get('content')
+    url = content[len(url_context_prefix):]
+    hl = hashlib.md5()
+    hl.update(url.encode(encoding='utf-8'))
+    context = hl.hexdigest()
+    path = faiss_dir + context
+    if not os.path.exists(path):
+        db = load_url(url)
+        db.save_local(path)
+    else:
+        db = FAISS.load_local(path, embeddings)
+    return based_request(messages, db)
+
+
+def load_url(url):
+    loader = SeleniumURLLoader(urls=[url], headless=False)
+    data = loader.load()
+    text = data[0].page_content
+    docs = text_splitter.create_documents([text])
+    return FAISS.from_documents(docs, embeddings)
+
+
 @app.post('/api/chatgpt')
 async def gpt_langchain_request(request: Request):
     if not release:
@@ -121,51 +202,13 @@ async def gpt_langchain_request(request: Request):
         messages = body.get('messages')
         result_content = ''
         source_content = ''
-        if messages[0].get('role') == 'system' and messages[0].get('content').startswith(context_prefix):
-            content = messages[0].get('content')
-            context = content[len(context_prefix):]
-            db = FAISS.load_local('faissSave/' + context, embeddings)
-            qa = ConversationalRetrievalChain.from_llm(
-                llm, db.as_retriever(), return_source_documents=True)
-            chat_history = []
-            i = 1
-            while i < len(messages) - 1:
-                msg = messages[i]
-                role = msg.get('role')
-                query = msg.get('content')
-                i += 1
-                if role == 'user':
-                    msg = messages[i]
-                    role = msg.get('role')
-                    if role == 'assistant':
-                        answer = msg.get('content')
-                        chat_history.append((query, answer))
-                        i += 1
-
-            query = messages[-1].get('content')
-            content = {'question': query, 'chat_history': chat_history}
-            result = qa(content)
-            result_content = result['answer']
-            try:
-                source_content = result['source_documents'][0].page_content
-            except:
-                traceback.print_exc()
-                gptLogger.exception(e)
-
+        if messages[0].get('role') == 'system' and (messages[0].get('content').startswith(context_prefix) or messages[0].get('content').startswith(url_context_prefix)):
+            if messages[0].get('content').startswith(context_prefix):
+                result_content, source_content = file_base_request(messages)
+            else:
+                result_content, source_content = url_base_request(messages)
         else:
-            contents = []
-            for msg in messages:
-                role = msg.get('role')
-                content = msg.get('content')
-                if role == 'user':
-                    contents.append(HumanMessage(content=content))
-                elif role == 'assistant':
-                    contents.append(AIMessage(content=content))
-                else:
-                    contents.append(SystemMessage(content=content))
-
-            result = llm(contents)
-            result_content = result.content
+            result_content, source_content = langchain_request(messages)
 
         gptLogger.info(result_content)
         gptLogger.info('')
@@ -217,6 +260,11 @@ async def upload_page():
                 <input type="file" name="file"/>
                 <button type="submit">Upload</button>
             </form>
+            <form action="/url" method="post" enctype="multipart/form-data">
+                <input type="text" name="index" placeholder="Url Index"/>
+                <input type="text" name="url" placeholder="Url"/>
+                <button type="submit">Upload</button>
+            </form>
         </body>
     </html>
     """
@@ -226,7 +274,7 @@ async def upload_page():
 async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
     try:
         ext = file.filename.split(".")[-1]
-        name = 'files/' + index + '.' + ext
+        name = file_dir + index + '.' + ext
 
         content = await file.read()
         with open(name, 'wb') as f:
@@ -245,9 +293,23 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
         text = data[0].page_content
         docs = text_splitter.create_documents([text])
         db = FAISS.from_documents(docs, embeddings)
-        db.save_local('faissSave/' + index)
+        db.save_local(faiss_dir + index)
 
         return {"message": f"Save {index} from {file.filename}"}
+
+    except Exception as e:
+        traceback.print_exc()
+        gptLogger.exception(e)
+        return {"message": f"{e}"}
+
+
+@app.post("/url")
+async def upload_url(url: str = Form(...), index: str = Form(...)):
+    try:
+        db = load_url(url)
+        db.save_local(faiss_dir + index)
+
+        return {"message": f"Save {index} from {url}"}
 
     except Exception as e:
         traceback.print_exc()
