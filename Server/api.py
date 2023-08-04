@@ -5,6 +5,8 @@ import json
 import hashlib
 import uvicorn
 import aiohttp
+import nest_asyncio
+from logging import FileHandler
 from logging.handlers import TimedRotatingFileHandler
 from fastapi import FastAPI, Query, Request, File, Form, UploadFile
 from fastapi.responses import HTMLResponse
@@ -14,11 +16,12 @@ from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
+from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader, BiliBiliLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
 
+nest_asyncio.apply()
 app = FastAPI()
 
 gptHandler = TimedRotatingFileHandler(
@@ -37,18 +40,26 @@ bingLogger = logging.getLogger('bing')
 bingLogger.setLevel(logging.INFO)
 bingLogger.addHandler(bingHandler)
 
+embeddingHandler = FileHandler('log/embedding.log', encoding='utf-8')
+embeddingHandler.setLevel(logging.INFO)
+embeddingHandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+embeddingLogger = logging.getLogger('embedding')
+embeddingLogger.setLevel(logging.INFO)
+embeddingLogger.addHandler(embeddingHandler)
+
 target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
 
 os.environ['OPENAI_API_KEY'] = authorization
 llm = ChatOpenAI(model="gpt-3.5-turbo-16k", temperature=0.9)
 text_splitter = RecursiveCharacterTextSplitter(
-    separators=['\n\n', '\n'], chunk_size=4000, chunk_overlap=350)
+    separators=['\n\n', '\n'], chunk_size=2000, chunk_overlap=300)
 embeddings = OpenAIEmbeddings(openai_api_key=authorization)
 faiss_dir = 'faissSave/'
 file_dir = 'files/'
 context_prefix = 'f:'
 url_context_prefix = 'u:'
+bilibili_context_prefix = 'b:'
 
 release = True
 
@@ -177,6 +188,25 @@ def url_base_request(messages):
     if not os.path.exists(path):
         db = load_url(url)
         db.save_local(path)
+        embeddingLogger.info(f'{context} - {url}')
+    else:
+        db = FAISS.load_local(path, embeddings)
+    return based_request(messages, db)
+
+
+def bilibili_base_request(messages):
+    content = messages[0].get('content')
+    url = content[len(bilibili_context_prefix):]
+    hl = hashlib.md5()
+    hl.update(url.encode(encoding='utf-8'))
+    context = hl.hexdigest()
+    path = faiss_dir + context
+    if not os.path.exists(path):
+        db = load_bilibli(url)
+        if not db:
+            return '该视频未生成字幕', ''
+        db.save_local(path)
+        embeddingLogger.info(f'{context} - {url}')
     else:
         db = FAISS.load_local(path, embeddings)
     return based_request(messages, db)
@@ -186,6 +216,16 @@ def load_url(url):
     loader = SeleniumURLLoader(urls=[url], headless=False)
     data = loader.load()
     text = data[0].page_content
+    docs = text_splitter.create_documents([text])
+    return FAISS.from_documents(docs, embeddings)
+
+
+def load_bilibli(url):
+    loader = BiliBiliLoader([url])
+    data = loader.load()
+    text = data[0].page_content
+    if (text == ''):
+        return None
     docs = text_splitter.create_documents([text])
     return FAISS.from_documents(docs, embeddings)
 
@@ -202,9 +242,12 @@ async def gpt_langchain_request(request: Request):
         messages = body.get('messages')
         result_content = ''
         source_content = ''
-        if messages[0].get('role') == 'system' and (messages[0].get('content').startswith(context_prefix) or messages[0].get('content').startswith(url_context_prefix)):
+        if messages[0].get('role') == 'system' and (messages[0].get('content').startswith(context_prefix) or messages[0].get('content').startswith(url_context_prefix) or messages[0].get('content').startswith(bilibili_context_prefix)):
             if messages[0].get('content').startswith(context_prefix):
                 result_content, source_content = file_base_request(messages)
+            elif messages[0].get('content').startswith(bilibili_context_prefix):
+                result_content, source_content = bilibili_base_request(
+                    messages)
             else:
                 result_content, source_content = url_base_request(messages)
         else:
@@ -294,6 +337,7 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
         docs = text_splitter.create_documents([text])
         db = FAISS.from_documents(docs, embeddings)
         db.save_local(faiss_dir + index)
+        embeddingLogger.info(f'{index} - {file.filename}')
 
         return {"message": f"Save {index} from {file.filename}"}
 
@@ -308,6 +352,7 @@ async def upload_url(url: str = Form(...), index: str = Form(...)):
     try:
         db = load_url(url)
         db.save_local(faiss_dir + index)
+        embeddingLogger.info(f'{index} - {url}')
 
         return {"message": f"Save {index} from {url}"}
 
