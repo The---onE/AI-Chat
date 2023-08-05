@@ -506,23 +506,17 @@ async def bing_request(request: Request):
         try:
             if ref is not None:
                 response['ref'] = ''
-                quotes = message["adaptiveCards"][0]["body"]
-                if quotes.__len__() >= 1:
-                    quotes = quotes[0]["text"]
-                    if quotes.startswith('[1]'):
-                        split = quotes.find("\n\n")
-                        quotes = quotes[:split]
-                        quotes_ = []
-                        quotes = quotes.split("\n")
-                        count = 1
-                        for quote in quotes:
-                            quote = quote[quote.find(": ") + 2:]
-                            s = quote.find(" ")
-                            quotes_.append(
-                                f"""[^{count}^]:[{quote[s+2:-1]}]({quote[:s]})""")
+                if message.get('sourceAttributions'):
+                    count = 1
+                    quoteList = []
+                    for item in message.get('sourceAttributions'):
+                        title = item.get('providerDisplayName')
+                        url = item.get('seeMoreUrl')
+                        if title and url:
+                            quoteList.append(f"""[^{count}^]:[{title}]({url})""")
                             count += 1
-                        quotes = "\n\n".join(quotes_)
-                        response['ref'] = quotes
+                    quotes = "\n\n".join(quoteList)
+                    response['ref'] = quotes
         except Exception as e:
             traceback.print_exc()
             bingLogger.exception(e)
