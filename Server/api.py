@@ -3,6 +3,7 @@ import traceback
 import logging
 import json
 import hashlib
+import inspect
 import uvicorn
 import aiohttp
 import nest_asyncio
@@ -221,7 +222,18 @@ def load_url(url):
 
 
 def load_bilibli(url):
-    loader = BiliBiliLoader([url])
+    cookies = json.loads(
+        open('./bili_cookies_0.json', encoding='utf-8').read())
+    params = {
+        'video_urls': [url],
+        'cookies': cookies
+    }
+    sig = inspect.signature(BiliBiliLoader.__init__)
+    filter_keys = [param.name for param in sig.parameters.values(
+    ) if param.kind == param.POSITIONAL_OR_KEYWORD and param.name != 'self']
+    filter_dict = {filter_key: params[filter_key]
+                   for filter_key in filter_keys}
+    loader = BiliBiliLoader(**filter_dict)
     data = loader.load()
     text = data[0].page_content
     if (text == ''):
@@ -404,7 +416,7 @@ async def bing_main(prompt, conversationId=None, conversation_style=Conversation
         # 读取bot
         if conversationId is None or bots.get(conversationId) is None:
             cookies = json.loads(
-                open('./cookies.json', encoding='utf-8').read())
+                open('./bing_cookies_0.json', encoding='utf-8').read())
             bot = await Chatbot.create(cookies=cookies)
             # bot = Chatbot(cookie_path='./cookies.json')
             # bot = Chatbot()
