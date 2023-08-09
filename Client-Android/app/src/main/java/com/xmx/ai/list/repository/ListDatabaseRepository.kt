@@ -8,7 +8,7 @@ class ListDatabaseRepository {
     private val context = App.context()
     private val database = ChatDatabase.getDatabase(context)
 
-    fun getAllStartContentData() = database.contentDAO().getAllStartContentData()
+    fun getAllStartContentData(limit: Int, offset: Int) = database.contentDAO().getAllStartContentData(limit, offset)
 
     fun deleteRoomContent(roomId: Long) = database.contentDAO().deleteRoomContent(roomId)
 

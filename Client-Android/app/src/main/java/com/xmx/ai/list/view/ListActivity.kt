@@ -8,7 +8,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.Observer
+import androidx.core.widget.NestedScrollView
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.xmx.ai.App
 import com.xmx.ai.bing.view.BingActivity
@@ -20,14 +20,17 @@ import com.xmx.ai.list.viewModel.ListViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.system.exitProcess
 
 class ListActivity : AppCompatActivity() {
 
     private lateinit var binding : ActivityListBinding
     private val viewModel : ListViewModel by viewModels()
     private var contentDataList = ArrayList<ContentEntity>()
-    var isActive : Boolean = false
+    private val limitCount = 10
+    private var count = 0
+    private var isLoading = false
+    var isActive = false
+
 
     init {
         instance = this
@@ -47,19 +50,23 @@ class ListActivity : AppCompatActivity() {
         binding = ActivityListBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        viewModel.initContentData()
+        count = limitCount
+        contentDataList.clear()
+
+        viewModel.getContentData(count, 0)
 
         viewModel.contentList.observe(this) {
-            contentDataList.clear()
             for (entity in it) {
                 contentDataList.add(entity)
             }
             setContentListRV()
+            isLoading = false
         }
 
         viewModel.deleteCheck.observe(this) {
             if (it == true) {
-                viewModel.getContentData()
+                contentDataList.clear()
+                viewModel.getContentData(count, 0)
             }
         }
 
@@ -72,12 +79,25 @@ class ListActivity : AppCompatActivity() {
             val intent = Intent(this@ListActivity, GptActivity::class.java)
             startActivity(intent)
         }
+
+        binding.SVList.setOnScrollChangeListener { v:NestedScrollView, scrollX, scrollY, oldScrollX, oldScrollY ->
+            if (!isLoading) {
+                val childHeight = v.getChildAt(0).measuredHeight
+                val parentHeight = v.measuredHeight
+                if (scrollY >= childHeight - parentHeight) {
+                    count += limitCount
+                    viewModel.getContentData(count, count - limitCount)
+                    isLoading = true
+                }
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
         isActive = true
-        viewModel.getContentData()
+        contentDataList.clear()
+        viewModel.getContentData(count, 0)
     }
 
     override fun onPause() {

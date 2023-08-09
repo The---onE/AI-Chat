@@ -21,13 +21,8 @@ class ListViewModel : ViewModel() {
     val deleteCheck: LiveData<Boolean>
         get() = _deleteCheck
 
-    fun initContentData() = viewModelScope.launch(Dispatchers.IO) {
-        _contentList.postValue(databaseRepository.getAllStartContentData())
-        _deleteCheck.postValue(false)
-    }
-
-    fun getContentData() = viewModelScope.launch(Dispatchers.IO) {
-        _contentList.postValue(databaseRepository.getAllStartContentData())
+    fun getContentData(limit : Int, offset : Int) = viewModelScope.launch(Dispatchers.IO) {
+        _contentList.postValue(databaseRepository.getAllStartContentData(limit, offset))
         _deleteCheck.postValue(false)
     }
 
