@@ -78,6 +78,16 @@ class GptActivity : AppCompatActivity() {
             for (entity in it) {
                 contentDataList.add(entity)
             }
+
+            if (contentDataList.size > 0)
+            {
+                val firstData = contentDataList[0]
+                if (firstData.extra.isNotBlank())
+                {
+                    binding.EDViewSystem.setText(firstData.extra)
+                }
+            }
+
             setContentListRV()
         }
 

@@ -113,7 +113,10 @@ class GptViewModel : ViewModel() {
             addProperty("stream", false)
         }
 
-        insertContent(query, 2, true, roomId, start)
+        if (start == 1)
+            insertContent(query, 2, true, roomId, start, system)
+        else
+            insertContent(query, 2, true, roomId, start)
 
         try {
             val response = netWorkRepository.postResponse(jsonObject)
