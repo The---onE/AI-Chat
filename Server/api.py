@@ -3,7 +3,6 @@ import traceback
 import logging
 import json
 import hashlib
-import inspect
 import uvicorn
 import aiohttp
 import nest_asyncio
@@ -17,7 +16,8 @@ from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader, BiliBiliLoader
+from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
+from bilibili import BiliBiliLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chains import ConversationalRetrievalChain
@@ -216,29 +216,19 @@ def bilibili_base_request(messages):
 def load_url(url):
     loader = SeleniumURLLoader(urls=[url], headless=False)
     data = loader.load()
-    text = data[0].page_content
-    docs = text_splitter.create_documents([text])
+    docs = text_splitter.split_documents(data)
     return FAISS.from_documents(docs, embeddings)
 
 
 def load_bilibli(url):
     cookies = json.loads(
         open('./bili_cookies_0.json', encoding='utf-8').read())
-    params = {
-        'video_urls': [url],
-        'cookies': cookies
-    }
-    sig = inspect.signature(BiliBiliLoader.__init__)
-    filter_keys = [param.name for param in sig.parameters.values(
-    ) if param.kind == param.POSITIONAL_OR_KEYWORD and param.name != 'self']
-    filter_dict = {filter_key: params[filter_key]
-                   for filter_key in filter_keys}
-    loader = BiliBiliLoader(**filter_dict)
+    loader = BiliBiliLoader(video_urls=[url], cookies=cookies)
     data = loader.load()
     text = data[0].page_content
     if (text == ''):
         return None
-    docs = text_splitter.create_documents([text])
+    docs = text_splitter.split_documents(data)
     return FAISS.from_documents(docs, embeddings)
 
 
@@ -345,8 +335,7 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
             return {"message": f"{file.filename} not support"}
 
         data = loader.load()
-        text = data[0].page_content
-        docs = text_splitter.create_documents([text])
+        docs = text_splitter.split_documents(data)
         db = FAISS.from_documents(docs, embeddings)
         db.save_local(faiss_dir + index)
         embeddingLogger.info(f'{index} - {file.filename}')
@@ -506,14 +495,15 @@ async def bing_request(request: Request):
         try:
             if ref is not None:
                 response['ref'] = ''
-                if message.get('sourceAttributions'):
+                if message and message.get('sourceAttributions'):
                     count = 1
                     quoteList = []
                     for item in message.get('sourceAttributions'):
                         title = item.get('providerDisplayName')
                         url = item.get('seeMoreUrl')
                         if title and url:
-                            quoteList.append(f"""[^{count}^]:[{title}]({url})""")
+                            quoteList.append(
+                                f"""[^{count}^]:[{title}]({url})""")
                             count += 1
                     quotes = "\n\n".join(quoteList)
                     response['ref'] = quotes
