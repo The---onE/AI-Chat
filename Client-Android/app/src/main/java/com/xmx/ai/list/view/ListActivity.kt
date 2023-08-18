@@ -17,17 +17,14 @@ import com.xmx.ai.database.entity.ContentEntity
 import com.xmx.ai.databinding.ActivityListBinding
 import com.xmx.ai.list.adapter.ListContentAdapter
 import com.xmx.ai.list.viewModel.ListViewModel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class ListActivity : AppCompatActivity() {
 
     private lateinit var binding : ActivityListBinding
     private val viewModel : ListViewModel by viewModels()
     private var contentDataList = ArrayList<ContentEntity>()
-    private val limitCount = 10
-    private var count = 0
+    private val pageCount = 10
+    private var loadedCount = 0
     private var isLoading = false
     var isActive = false
 
@@ -50,10 +47,7 @@ class ListActivity : AppCompatActivity() {
         binding = ActivityListBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        count = limitCount
-        contentDataList.clear()
-
-        viewModel.getContentData(count, 0)
+        loadedCount = pageCount
 
         viewModel.contentList.observe(this) {
             for (entity in it) {
@@ -66,7 +60,7 @@ class ListActivity : AppCompatActivity() {
         viewModel.deleteCheck.observe(this) {
             if (it == true) {
                 contentDataList.clear()
-                viewModel.getContentData(count, 0)
+                viewModel.getContentData(loadedCount, 0)
             }
         }
 
@@ -85,9 +79,9 @@ class ListActivity : AppCompatActivity() {
                 val childHeight = v.getChildAt(0).measuredHeight
                 val parentHeight = v.measuredHeight
                 if (scrollY >= childHeight - parentHeight) {
-                    count += limitCount
-                    viewModel.getContentData(count, count - limitCount)
                     isLoading = true
+                    viewModel.getContentData(pageCount, loadedCount)
+                    loadedCount += pageCount
                 }
             }
         }
@@ -97,7 +91,7 @@ class ListActivity : AppCompatActivity() {
         super.onResume()
         isActive = true
         contentDataList.clear()
-        viewModel.getContentData(count, 0)
+        viewModel.getContentData(loadedCount, 0)
     }
 
     override fun onPause() {
@@ -123,10 +117,6 @@ class ListActivity : AppCompatActivity() {
         binding.RVList.adapter = contentAdapter
         binding.RVList.layoutManager = LinearLayoutManager(this).apply {
             stackFromEnd = true
-        }
-        CoroutineScope(Dispatchers.Main).launch {
-//            delay(100)
-//            binding.SVList.fullScroll(ScrollView.FOCUS_UP)
         }
 
         contentAdapter.listLayoutClick = object : ListContentAdapter.ListLayoutClick {
