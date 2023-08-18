@@ -19,7 +19,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
 from bilibili import BiliBiliLoader
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain.vectorstores import VectorStore, FAISS
 from langchain.chains import ConversationalRetrievalChain
 
 nest_asyncio.apply()
@@ -52,7 +52,7 @@ target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
 
 os.environ['OPENAI_API_KEY'] = authorization
-llm = ChatOpenAI(model="gpt-3.5-turbo-16k", temperature=0.9)
+llm = ChatOpenAI(model='gpt-3.5-turbo-16k', temperature=0.9)
 text_splitter = RecursiveCharacterTextSplitter(
     separators=['\n\n', '\n'], chunk_size=2000, chunk_overlap=300)
 embeddings = OpenAIEmbeddings(openai_api_key=authorization)
@@ -141,9 +141,9 @@ def langchain_request(messages):
     return result.content, ''
 
 
-def based_request(messages, db):
+def based_request(messages, db: VectorStore):
     qa = ConversationalRetrievalChain.from_llm(
-        llm, db.as_retriever(), return_source_documents=True)
+        llm, db.as_retriever(search_type='mmr'), return_source_documents=True)
     chat_history = []
     i = 1
     while i < len(messages) - 1:
@@ -165,7 +165,11 @@ def based_request(messages, db):
     result_content = result['answer']
     source_content = ''
     try:
-        source_content = result['source_documents'][0].page_content
+        source_docs = result['source_documents']
+        contexts = []
+        for doc in source_docs:
+            contexts.append(doc.page_content)
+        source_content = '\n\n'.join(contexts)
     except Exception as e:
         traceback.print_exc()
         gptLogger.exception(e)
@@ -292,7 +296,7 @@ async def gpt_langchain_request(request: Request):
         }
 
 
-@app.get("/upload/", response_class=HTMLResponse)
+@app.get('/upload/', response_class=HTMLResponse)
 async def upload_page():
     return """
     <html>
@@ -315,24 +319,24 @@ async def upload_page():
     """
 
 
-@app.post("/file")
+@app.post('/file')
 async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
     try:
-        ext = file.filename.split(".")[-1]
+        ext = file.filename.split('.')[-1]
         name = file_dir + index + '.' + ext
 
         content = await file.read()
         with open(name, 'wb') as f:
             f.write(content)
 
-        if ext == "txt":
+        if ext == 'txt':
             loader = TextLoader(name, autodetect_encoding=True)
-        elif ext == "docx" or ext == "dox":
+        elif ext == 'docx' or ext == 'dox':
             loader = Docx2txtLoader(name)
-        elif ext == "pdf":
+        elif ext == 'pdf':
             loader = UnstructuredPDFLoader(name)
         else:
-            return {"message": f"{file.filename} not support"}
+            return {'message': f'{file.filename} not support'}
 
         data = loader.load()
         docs = text_splitter.split_documents(data)
@@ -340,27 +344,27 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
         db.save_local(faiss_dir + index)
         embeddingLogger.info(f'{index} - {file.filename}')
 
-        return {"message": f"Save {index} from {file.filename}"}
+        return {'message': f'Save {index} from {file.filename}'}
 
     except Exception as e:
         traceback.print_exc()
         gptLogger.exception(e)
-        return {"message": f"{e}"}
+        return {'message': f'{e}'}
 
 
-@app.post("/url")
+@app.post('/url')
 async def upload_url(url: str = Form(...), index: str = Form(...)):
     try:
         db = load_url(url)
         db.save_local(faiss_dir + index)
         embeddingLogger.info(f'{index} - {url}')
 
-        return {"message": f"Save {index} from {url}"}
+        return {'message': f'Save {index} from {url}'}
 
     except Exception as e:
         traceback.print_exc()
         gptLogger.exception(e)
-        return {"message": f"{e}"}
+        return {'message': f'{e}'}
 
 
 id_queue = []
@@ -505,7 +509,7 @@ async def bing_request(request: Request):
                             quoteList.append(
                                 f"""[^{count}^]:[{title}]({url})""")
                             count += 1
-                    quotes = "\n\n".join(quoteList)
+                    quotes = '\n\n'.join(quoteList)
                     response['ref'] = quotes
         except Exception as e:
             traceback.print_exc()
@@ -522,4 +526,4 @@ async def bing_request(request: Request):
 
 
 if __name__ == '__main__':
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host='0.0.0.0', port=5000)
