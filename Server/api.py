@@ -58,9 +58,13 @@ text_splitter = RecursiveCharacterTextSplitter(
 embeddings = OpenAIEmbeddings(openai_api_key=authorization)
 faiss_dir = 'faissSave/'
 file_dir = 'files/'
-context_prefix = 'f:'
+file_context_prefix = 'f:'
 url_context_prefix = 'u:'
 bilibili_context_prefix = 'b:'
+text_context_prefix = 't:'
+context_prefix = [file_context_prefix, url_context_prefix,
+                  bilibili_context_prefix, text_context_prefix]
+
 
 release = True
 
@@ -178,7 +182,7 @@ def based_request(messages, db: VectorStore):
 
 def file_base_request(messages):
     content = messages[0].get('content')
-    context = content[len(context_prefix):]
+    context = content[len(file_context_prefix):]
     db = FAISS.load_local(faiss_dir + context, embeddings)
     return based_request(messages, db)
 
@@ -217,6 +221,23 @@ def bilibili_base_request(messages):
     return based_request(messages, db)
 
 
+def text_base_request(messages):
+    content = messages[0].get('content')
+    text = content[len(text_context_prefix):]
+    hl = hashlib.md5()
+    hl.update(text.encode(encoding='utf-8'))
+    context = hl.hexdigest()
+    path = faiss_dir + context
+    if not os.path.exists(path):
+        docs = text_splitter.create_documents([text])
+        db = FAISS.from_documents(docs, embeddings)
+        db.save_local(path)
+        embeddingLogger.info(f'{context} - {text}')
+    else:
+        db = FAISS.load_local(path, embeddings)
+    return based_request(messages, db)
+
+
 def load_url(url):
     loader = SeleniumURLLoader(urls=[url], headless=False)
     data = loader.load()
@@ -248,12 +269,14 @@ async def gpt_langchain_request(request: Request):
         messages = body.get('messages')
         result_content = ''
         source_content = ''
-        if messages[0].get('role') == 'system' and (messages[0].get('content').startswith(context_prefix) or messages[0].get('content').startswith(url_context_prefix) or messages[0].get('content').startswith(bilibili_context_prefix)):
-            if messages[0].get('content').startswith(context_prefix):
+        if messages[0].get('role') == 'system' and messages[0].get('content').startswith(tuple(context_prefix)):
+            if messages[0].get('content').startswith(file_context_prefix):
                 result_content, source_content = file_base_request(messages)
             elif messages[0].get('content').startswith(bilibili_context_prefix):
                 result_content, source_content = bilibili_base_request(
                     messages)
+            elif messages[0].get('content').startswith(text_context_prefix):
+                result_content, source_content = text_base_request(messages)
             else:
                 result_content, source_content = url_base_request(messages)
         else:
@@ -411,8 +434,6 @@ async def bing_main(prompt, conversationId=None, conversation_style=Conversation
             cookies = json.loads(
                 open('./bing_cookies_0.json', encoding='utf-8').read())
             bot = await Chatbot.create(cookies=cookies)
-            # bot = Chatbot(cookie_path='./cookies.json')
-            # bot = Chatbot()
             conversationId = ''
         else:
             bot = bots[conversationId]
