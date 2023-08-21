@@ -6,6 +6,7 @@ import hashlib
 import uvicorn
 import aiohttp
 import nest_asyncio
+from typing import List, Dict, Tuple, Optional
 from logging import FileHandler
 from logging.handlers import TimedRotatingFileHandler
 from fastapi import FastAPI, Query, Request, File, Form, UploadFile
@@ -15,6 +16,7 @@ from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain.schema.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
 from bilibili import BiliBiliLoader
@@ -55,7 +57,7 @@ os.environ['OPENAI_API_KEY'] = authorization
 llm = ChatOpenAI(model='gpt-3.5-turbo-16k', temperature=0.9)
 text_splitter = RecursiveCharacterTextSplitter(
     separators=['\n\n', '\n'], chunk_size=2000, chunk_overlap=300)
-embeddings = OpenAIEmbeddings(openai_api_key=authorization)
+embeddings = OpenAIEmbeddings(client=None)
 faiss_dir = 'faissSave/'
 file_dir = 'files/'
 file_context_prefix = 'f:'
@@ -129,7 +131,7 @@ async def gpt_request(request: Request):
         return json
 
 
-def langchain_request(messages):
+def langchain_request(messages: List) -> Tuple[str, str]:
     contents = []
     for msg in messages:
         role = msg.get('role')
@@ -145,7 +147,7 @@ def langchain_request(messages):
     return result.content, ''
 
 
-def based_request(messages, db: VectorStore):
+def based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
     qa = ConversationalRetrievalChain.from_llm(
         llm, db.as_retriever(search_type='mmr'), return_source_documents=True)
     chat_history = []
@@ -180,14 +182,14 @@ def based_request(messages, db: VectorStore):
     return result_content, source_content
 
 
-def file_base_request(messages):
+def file_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     context = content[len(file_context_prefix):]
     db = FAISS.load_local(faiss_dir + context, embeddings)
     return based_request(messages, db)
 
 
-def url_base_request(messages):
+def url_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     url = content[len(url_context_prefix):]
     hl = hashlib.md5()
@@ -195,15 +197,13 @@ def url_base_request(messages):
     context = hl.hexdigest()
     path = faiss_dir + context
     if not os.path.exists(path):
-        db = load_url(url)
-        db.save_local(path)
-        embeddingLogger.info(f'{context} - {url}')
+        db = load_url(url, context)
     else:
         db = FAISS.load_local(path, embeddings)
     return based_request(messages, db)
 
 
-def bilibili_base_request(messages):
+def bilibili_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     url = content[len(bilibili_context_prefix):]
     hl = hashlib.md5()
@@ -211,17 +211,15 @@ def bilibili_base_request(messages):
     context = hl.hexdigest()
     path = faiss_dir + context
     if not os.path.exists(path):
-        db = load_bilibli(url)
+        db = load_bilibli(url, context)
         if not db:
             return '该视频未生成字幕', ''
-        db.save_local(path)
-        embeddingLogger.info(f'{context} - {url}')
     else:
         db = FAISS.load_local(path, embeddings)
     return based_request(messages, db)
 
 
-def text_base_request(messages):
+def text_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     text = content[len(text_context_prefix):]
     hl = hashlib.md5()
@@ -229,23 +227,22 @@ def text_base_request(messages):
     context = hl.hexdigest()
     path = faiss_dir + context
     if not os.path.exists(path):
-        docs = text_splitter.create_documents([text])
-        db = FAISS.from_documents(docs, embeddings)
-        db.save_local(path)
-        embeddingLogger.info(f'{context} - {text}')
+        data = [Document(page_content=text, metadata={})]
+        first_line = text[:text.index('\n')] if '\n' in text else text
+        db = save_docs_to_db(data, context, first_line)
     else:
         db = FAISS.load_local(path, embeddings)
     return based_request(messages, db)
 
 
-def load_url(url):
+def load_url(url: str, index: str) -> VectorStore:
     loader = SeleniumURLLoader(urls=[url], headless=False)
     data = loader.load()
-    docs = text_splitter.split_documents(data)
-    return FAISS.from_documents(docs, embeddings)
+    db = save_docs_to_db(data, index, url)
+    return db
 
 
-def load_bilibli(url):
+def load_bilibli(url: str, index: str) -> Optional[VectorStore]:
     cookies = json.loads(
         open('./bili_cookies_0.json', encoding='utf-8').read())
     loader = BiliBiliLoader(video_urls=[url], cookies=cookies)
@@ -253,8 +250,16 @@ def load_bilibli(url):
     text = data[0].page_content
     if (text == ''):
         return None
+    db = save_docs_to_db(data, index, url)
+    return db
+
+
+def save_docs_to_db(data: List[Document], index: str, source: str) -> VectorStore:
     docs = text_splitter.split_documents(data)
-    return FAISS.from_documents(docs, embeddings)
+    db = FAISS.from_documents(docs, embeddings)
+    db.save_local(faiss_dir + index)
+    embeddingLogger.info(f'{index} - {source}')
+    return db
 
 
 @app.post('/api/chatgpt')
@@ -345,6 +350,8 @@ async def upload_page():
 @app.post('/file')
 async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
     try:
+        if not file or not file.filename:
+            return {'message': '文件上传错误'}
         ext = file.filename.split('.')[-1]
         name = file_dir + index + '.' + ext
 
@@ -362,10 +369,7 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
             return {'message': f'{file.filename} not support'}
 
         data = loader.load()
-        docs = text_splitter.split_documents(data)
-        db = FAISS.from_documents(docs, embeddings)
-        db.save_local(faiss_dir + index)
-        embeddingLogger.info(f'{index} - {file.filename}')
+        save_docs_to_db(data, index, file.filename)
 
         return {'message': f'Save {index} from {file.filename}'}
 
@@ -378,9 +382,7 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
 @app.post('/url')
 async def upload_url(url: str = Form(...), index: str = Form(...)):
     try:
-        db = load_url(url)
-        db.save_local(faiss_dir + index)
-        embeddingLogger.info(f'{index} - {url}')
+        load_url(url, index)
 
         return {'message': f'Save {index} from {url}'}
 
@@ -397,16 +399,17 @@ max_id = 10
 max_remove = 10
 
 
-def analysis_bing_response(response):
+def analysis_bing_response(response: Dict) -> Tuple[str, str, Optional[Dict]]:
     # 解析response
     conversationId = ''
-    message = ''
+    message = None
     try:
         item = response.get('item')
+        if not item:
+            return conversationId, '服务器未返回item', message
         conversationId = item.get('conversationId')
         messages = item.get('messages')
-        message = None
-        answer = None
+        answer = ''
         if messages is not None and len(messages) > 1:
             for msg in messages:
                 if msg.get('author') == 'bot' and msg.get('messageType') is None:
@@ -427,7 +430,7 @@ def analysis_bing_response(response):
         return conversationId, str(e), message
 
 
-async def bing_main(prompt, conversationId=None, conversation_style=ConversationStyle.creative):
+async def bing_main(prompt: str, conversationId: Optional[str] = None, conversation_style: ConversationStyle = ConversationStyle.creative) -> Tuple[Optional[str], str, Optional[Dict], Optional[Dict]]:
     try:
         # 读取bot
         if conversationId is None or bots.get(conversationId) is None:
@@ -520,18 +523,20 @@ async def bing_request(request: Request):
         try:
             if ref is not None:
                 response['ref'] = ''
-                if message and message.get('sourceAttributions'):
-                    count = 1
-                    quoteList = []
-                    for item in message.get('sourceAttributions'):
-                        title = item.get('providerDisplayName')
-                        url = item.get('seeMoreUrl')
-                        if title and url:
-                            quoteList.append(
-                                f"""[^{count}^]:[{title}]({url})""")
-                            count += 1
-                    quotes = '\n\n'.join(quoteList)
-                    response['ref'] = quotes
+                if message:
+                    attributions = message.get('sourceAttributions')
+                    if attributions:
+                        count = 1
+                        quoteList = []
+                        for item in attributions:
+                            title = item.get('providerDisplayName')
+                            url = item.get('seeMoreUrl')
+                            if title and url:
+                                quoteList.append(
+                                    f"""[^{count}^]:[{title}]({url})""")
+                                count += 1
+                        quotes = '\n\n'.join(quoteList)
+                        response['ref'] = quotes
         except Exception as e:
             traceback.print_exc()
             bingLogger.exception(e)
