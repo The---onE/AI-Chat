@@ -23,6 +23,8 @@ from bilibili import BiliBiliLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import VectorStore, FAISS
 from langchain.chains import ConversationalRetrievalChain
+from langchain.chains.summarize import load_summarize_chain
+from langchain.prompts import PromptTemplate
 
 nest_asyncio.apply()
 app = FastAPI()
@@ -60,6 +62,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 embeddings = OpenAIEmbeddings(client=None)
 faiss_dir = 'faissSave/'
 file_dir = 'files/'
+
 file_context_prefix = 'f:'
 url_context_prefix = 'u:'
 bilibili_context_prefix = 'b:'
@@ -67,6 +70,9 @@ text_context_prefix = 't:'
 context_prefix = [file_context_prefix, url_context_prefix,
                   bilibili_context_prefix, text_context_prefix]
 
+
+summarize_prompt_prefix = ':s'
+special_prompt_prefix = [summarize_prompt_prefix]
 
 release = True
 
@@ -147,7 +153,18 @@ def langchain_request(messages: List) -> Tuple[str, str]:
     return result.content, ''
 
 
-def based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
+def based_request(messages: List, db: VectorStore, index: str) -> Tuple[str, str]:
+    query = messages[-1].get('content')
+    if query.startswith(tuple(special_prompt_prefix)):
+        if query.startswith(summarize_prompt_prefix):
+            return summarize_based_request(index)
+        else:
+            return conversational_based_request(messages, db)
+    else:
+        return conversational_based_request(messages, db)
+
+
+def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
     qa = ConversationalRetrievalChain.from_llm(
         llm, db.as_retriever(search_type='mmr'), return_source_documents=True)
     chat_history = []
@@ -182,11 +199,38 @@ def based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
     return result_content, source_content
 
 
+def summarize_based_request(index: str) -> Tuple[str, str]:
+    loader = TextLoader(f'{faiss_dir}{index}/{index}.txt',
+                        autodetect_encoding=True)
+    data = loader.load()
+    docs = text_splitter.split_documents(data)
+
+    map_template = """详细总结下文内容:
+
+    {text}
+
+    总结内容:"""
+    map_prompt = PromptTemplate(
+        template=map_template, input_variables=["text"])
+
+    combine_template = """详细总结下文各部分内容:
+
+    {text}
+
+    总结内容:"""
+    combine_prompt = PromptTemplate(
+        template=combine_template, input_variables=["text"])
+
+    chain = load_summarize_chain(
+        llm, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=12000)
+    return chain.run(docs), ''
+
+
 def file_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     context = content[len(file_context_prefix):]
     db = FAISS.load_local(faiss_dir + context, embeddings)
-    return based_request(messages, db)
+    return based_request(messages, db, context)
 
 
 def url_base_request(messages: List) -> Tuple[str, str]:
@@ -200,7 +244,7 @@ def url_base_request(messages: List) -> Tuple[str, str]:
         db = load_url(url, context)
     else:
         db = FAISS.load_local(path, embeddings)
-    return based_request(messages, db)
+    return based_request(messages, db, context)
 
 
 def bilibili_base_request(messages: List) -> Tuple[str, str]:
@@ -216,7 +260,7 @@ def bilibili_base_request(messages: List) -> Tuple[str, str]:
             return '该视频未生成字幕', ''
     else:
         db = FAISS.load_local(path, embeddings)
-    return based_request(messages, db)
+    return based_request(messages, db, context)
 
 
 def text_base_request(messages: List) -> Tuple[str, str]:
@@ -232,7 +276,7 @@ def text_base_request(messages: List) -> Tuple[str, str]:
         db = save_docs_to_db(data, context, first_line)
     else:
         db = FAISS.load_local(path, embeddings)
-    return based_request(messages, db)
+    return based_request(messages, db, context)
 
 
 def load_url(url: str, index: str) -> VectorStore:
@@ -259,6 +303,11 @@ def save_docs_to_db(data: List[Document], index: str, source: str) -> VectorStor
     db = FAISS.from_documents(docs, embeddings)
     db.save_local(faiss_dir + index)
     embeddingLogger.info(f'{index} - {source}')
+    with open(f'{faiss_dir}{index}/{index}.txt', 'w') as txt:
+        for doc in data:
+            txt.write(doc.page_content)
+            txt.write('\n\n')
+        txt.close()
     return db
 
 
