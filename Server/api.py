@@ -55,8 +55,13 @@ embeddingLogger.addHandler(embeddingHandler)
 target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
 
+gpt35_token = 8000
+gpt4_token = 2000
+
 os.environ['OPENAI_API_KEY'] = authorization
-llm = ChatOpenAI(model='gpt-3.5-turbo-16k', temperature=0.9)
+llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
+                   temperature=0.7, max_tokens=gpt35_token)
+llm4 = ChatOpenAI(model='gpt-4', temperature=0.7, max_tokens=gpt4_token)
 text_splitter = RecursiveCharacterTextSplitter(
     separators=['\n\n', '\n'], chunk_size=2000, chunk_overlap=300)
 embeddings = OpenAIEmbeddings(client=None)
@@ -75,6 +80,7 @@ summarize_prompt_prefix = ':s'
 special_prompt_prefix = [summarize_prompt_prefix]
 
 release = True
+use_gpt4 = True
 
 
 @app.get('/uprelease')
@@ -85,6 +91,17 @@ def update_release(r: str = Query(None)):
             release = False
         else:
             release = True
+    return str(release)
+
+
+@app.get('/upgpt4')
+def update_use_gpt4(r: str = Query(None)):
+    if r is not None:
+        global use_gpt4
+        if (r == 'false'):
+            use_gpt4 = False
+        else:
+            use_gpt4 = True
     return str(release)
 
 
@@ -139,17 +156,28 @@ async def gpt_request(request: Request):
 
 def langchain_request(messages: List) -> Tuple[str, str]:
     contents = []
+    messages.reverse()
     for msg in messages:
         role = msg.get('role')
         content = msg.get('content')
         if role == 'user':
-            contents.append(HumanMessage(content=content))
+            message = HumanMessage(content=content)
         elif role == 'assistant':
-            contents.append(AIMessage(content=content))
+            message = AIMessage(content=content)
         else:
-            contents.append(SystemMessage(content=content))
+            message = SystemMessage(content=content)
+        contents.append(message)
 
-    result = llm(contents)
+        if use_gpt4 and llm4.get_num_tokens_from_messages(contents) > gpt4_token:
+            break
+
+    contents.reverse()
+
+    if use_gpt4:
+        result = llm4(contents)
+    else:
+        result = llm35(contents)
+
     return result.content, ''
 
 
@@ -166,7 +194,7 @@ def based_request(messages: List, db: VectorStore, index: str) -> Tuple[str, str
 
 def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
     qa = ConversationalRetrievalChain.from_llm(
-        llm, db.as_retriever(search_type='mmr'), return_source_documents=True)
+        llm35, db.as_retriever(search_type='mmr'), return_source_documents=True)
     chat_history = []
     i = 1
     while i < len(messages) - 1:
@@ -221,8 +249,13 @@ def summarize_based_request(index: str) -> Tuple[str, str]:
     combine_prompt = PromptTemplate(
         template=combine_template, input_variables=["text"])
 
-    chain = load_summarize_chain(
-        llm, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=12000)
+    if use_gpt4:
+        chain = load_summarize_chain(
+            llm4, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=3000)
+    else:
+        chain = load_summarize_chain(
+            llm35, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=12000)
+
     return chain.run(docs), ''
 
 
