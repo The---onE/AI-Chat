@@ -56,7 +56,7 @@ target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
 
 gpt35_token = 8000
-gpt4_token = 2000
+gpt4_token = 4000
 
 os.environ['OPENAI_API_KEY'] = authorization
 llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
@@ -170,6 +170,8 @@ def langchain_request(messages: List) -> Tuple[str, str]:
 
         if use_gpt4 and llm4.get_num_tokens_from_messages(contents) > gpt4_token:
             break
+        if not use_gpt4 and llm35.get_num_tokens_from_messages(contents) > gpt35_token:
+            break
 
     contents.reverse()
 
@@ -249,12 +251,8 @@ def summarize_based_request(index: str) -> Tuple[str, str]:
     combine_prompt = PromptTemplate(
         template=combine_template, input_variables=["text"])
 
-    if use_gpt4:
-        chain = load_summarize_chain(
-            llm4, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=3000)
-    else:
-        chain = load_summarize_chain(
-            llm35, chain_type="map_reduce", map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=12000)
+    chain = load_summarize_chain(llm35, chain_type="map_reduce",
+                                 map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=12000)
 
     return chain.run(docs), ''
 
