@@ -303,7 +303,7 @@ def save_docs_to_db(data: List[Document], index: str, source: str) -> VectorStor
     db = FAISS.from_documents(docs, embeddings)
     db.save_local(faiss_dir + index)
     embeddingLogger.info(f'{index} - {source}')
-    with open(f'{faiss_dir}{index}/{index}.txt', 'w') as txt:
+    with open(f'{faiss_dir}{index}/{index}.txt', 'w', encoding='utf8') as txt:
         for doc in data:
             txt.write(doc.page_content)
             txt.write('\n\n')
