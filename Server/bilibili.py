@@ -44,6 +44,7 @@ class BiliBiliLoader(BaseLoader):
             url = 'https://www.bilibili.com/video/' + url
         bvid = re.search(r"BV\w+", url)
 
+        SESSDATA, BILI_JCT, BUVID3 = None, None, None #
         for cookie in self.cookies: #
             if cookie.get('name') == 'SESSDATA':
                 SESSDATA = cookie.get('value')

@@ -5,6 +5,7 @@ import json
 import hashlib
 import uvicorn
 import aiohttp
+import asyncio
 import nest_asyncio
 from typing import List, Dict, Tuple, Optional
 from logging import FileHandler
@@ -154,7 +155,7 @@ async def gpt_request(request: Request):
         return json
 
 
-def langchain_request(messages: List) -> Tuple[str, str]:
+async def langchain_request(messages: List) -> Tuple[str, str]:
     contents = []
     messages.reverse()
     for msg in messages:
@@ -176,25 +177,25 @@ def langchain_request(messages: List) -> Tuple[str, str]:
     contents.reverse()
 
     if use_gpt4:
-        result = llm4(contents)
+        result = await llm4.agenerate([contents])
     else:
-        result = llm35(contents)
+        result = await llm35.agenerate([contents])
 
-    return result.content, ''
+    return result.generations[0][0].text, ''
 
 
-def based_request(messages: List, db: VectorStore, index: str) -> Tuple[str, str]:
+async def based_request(messages: List, db: VectorStore, index: str) -> Tuple[str, str]:
     query = messages[-1].get('content')
     if query.startswith(tuple(special_prompt_prefix)):
         if query.startswith(summarize_prompt_prefix):
-            return summarize_based_request(index)
+            return await summarize_based_request(index)
         else:
-            return conversational_based_request(messages, db)
+            return await conversational_based_request(messages, db)
     else:
-        return conversational_based_request(messages, db)
+        return await conversational_based_request(messages, db)
 
 
-def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
+async def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
     qa = ConversationalRetrievalChain.from_llm(
         llm35, db.as_retriever(search_type='mmr'), return_source_documents=True)
     chat_history = []
@@ -214,7 +215,7 @@ def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, 
 
     query = messages[-1].get('content')
     content = {'question': query, 'chat_history': chat_history}
-    result = qa(content)
+    result = await qa.acall(content)
     result_content = result['answer']
     source_content = ''
     try:
@@ -229,7 +230,7 @@ def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, 
     return result_content, source_content
 
 
-def summarize_based_request(index: str) -> Tuple[str, str]:
+async def summarize_based_request(index: str) -> Tuple[str, str]:
     loader = TextLoader(f'{faiss_dir}{index}/{index}.txt',
                         autodetect_encoding=True)
     data = loader.load()
@@ -252,19 +253,19 @@ def summarize_based_request(index: str) -> Tuple[str, str]:
         template=combine_template, input_variables=["text"])
 
     chain = load_summarize_chain(llm35, chain_type="map_reduce",
-                                 map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=12000)
+                                 map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=8000)
+    result = await chain.arun(docs)
+    return result, ''
 
-    return chain.run(docs), ''
 
-
-def file_base_request(messages: List) -> Tuple[str, str]:
+async def file_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     context = content[len(file_context_prefix):]
     db = FAISS.load_local(faiss_dir + context, embeddings)
-    return based_request(messages, db, context)
+    return await based_request(messages, db, context)
 
 
-def url_base_request(messages: List) -> Tuple[str, str]:
+async def url_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     url = content[len(url_context_prefix):]
     hl = hashlib.md5()
@@ -272,13 +273,13 @@ def url_base_request(messages: List) -> Tuple[str, str]:
     context = hl.hexdigest()
     path = faiss_dir + context
     if not os.path.exists(path):
-        db = load_url(url, context)
+        db = await load_url(url, context)
     else:
         db = FAISS.load_local(path, embeddings)
-    return based_request(messages, db, context)
+    return await based_request(messages, db, context)
 
 
-def bilibili_base_request(messages: List) -> Tuple[str, str]:
+async def bilibili_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     url = content[len(bilibili_context_prefix):]
     hl = hashlib.md5()
@@ -286,15 +287,15 @@ def bilibili_base_request(messages: List) -> Tuple[str, str]:
     context = hl.hexdigest()
     path = faiss_dir + context
     if not os.path.exists(path):
-        db = load_bilibli(url, context)
+        db = await load_bilibli(url, context)
         if not db:
             return '该视频未生成字幕', ''
     else:
         db = FAISS.load_local(path, embeddings)
-    return based_request(messages, db, context)
+    return await based_request(messages, db, context)
 
 
-def text_base_request(messages: List) -> Tuple[str, str]:
+async def text_base_request(messages: List) -> Tuple[str, str]:
     content = messages[0].get('content')
     text = content[len(text_context_prefix):]
     hl = hashlib.md5()
@@ -304,20 +305,20 @@ def text_base_request(messages: List) -> Tuple[str, str]:
     if not os.path.exists(path):
         data = [Document(page_content=text, metadata={})]
         first_line = text[:text.index('\n')] if '\n' in text else text
-        db = save_docs_to_db(data, context, first_line)
+        db = await save_docs_to_db(data, context, first_line)
     else:
         db = FAISS.load_local(path, embeddings)
-    return based_request(messages, db, context)
+    return await based_request(messages, db, context)
 
 
-def load_url(url: str, index: str) -> VectorStore:
+async def load_url(url: str, index: str) -> VectorStore:
     loader = SeleniumURLLoader(urls=[url], headless=False)
     data = loader.load()
-    db = save_docs_to_db(data, index, url)
+    db = await save_docs_to_db(data, index, url)
     return db
 
 
-def load_bilibli(url: str, index: str) -> Optional[VectorStore]:
+async def load_bilibli(url: str, index: str) -> Optional[VectorStore]:
     cookies = json.loads(
         open('./bili_cookies_0.json', encoding='utf-8').read())
     loader = BiliBiliLoader(video_urls=[url], cookies=cookies)
@@ -325,13 +326,14 @@ def load_bilibli(url: str, index: str) -> Optional[VectorStore]:
     text = data[0].page_content
     if (text == ''):
         return None
-    db = save_docs_to_db(data, index, url)
+    db = await save_docs_to_db(data, index, url)
     return db
 
 
-def save_docs_to_db(data: List[Document], index: str, source: str) -> VectorStore:
+async def save_docs_to_db(data: List[Document], index: str, source: str) -> VectorStore:
     docs = text_splitter.split_documents(data)
-    db = FAISS.from_documents(docs, embeddings)
+    loop = asyncio.get_event_loop()
+    db = await loop.run_in_executor(None, FAISS.from_documents, docs, embeddings)
     db.save_local(faiss_dir + index)
     embeddingLogger.info(f'{index} - {source}')
     with open(f'{faiss_dir}{index}/{index}.txt', 'w', encoding='utf8') as txt:
@@ -356,16 +358,16 @@ async def gpt_langchain_request(request: Request):
         source_content = ''
         if messages[0].get('role') == 'system' and messages[0].get('content').startswith(tuple(context_prefix)):
             if messages[0].get('content').startswith(file_context_prefix):
-                result_content, source_content = file_base_request(messages)
+                result_content, source_content = await file_base_request(messages)
             elif messages[0].get('content').startswith(bilibili_context_prefix):
-                result_content, source_content = bilibili_base_request(
+                result_content, source_content = await bilibili_base_request(
                     messages)
             elif messages[0].get('content').startswith(text_context_prefix):
-                result_content, source_content = text_base_request(messages)
+                result_content, source_content = await text_base_request(messages)
             else:
-                result_content, source_content = url_base_request(messages)
+                result_content, source_content = await url_base_request(messages)
         else:
-            result_content, source_content = langchain_request(messages)
+            result_content, source_content = await langchain_request(messages)
 
         gptLogger.info(result_content)
         gptLogger.info('')
@@ -449,7 +451,7 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
             return {'message': f'{file.filename} not support'}
 
         data = loader.load()
-        save_docs_to_db(data, index, file.filename)
+        await save_docs_to_db(data, index, file.filename)
 
         return {'message': f'Save {index} from {file.filename}'}
 
@@ -462,7 +464,7 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
 @app.post('/url')
 async def upload_url(url: str = Form(...), index: str = Form(...)):
     try:
-        load_url(url, index)
+        await load_url(url, index)
 
         return {'message': f'Save {index} from {url}'}
 

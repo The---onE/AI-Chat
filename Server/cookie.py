@@ -24,7 +24,7 @@ async def bing_cookie():
 
 
 @app.get('/bili')
-async def bing_cookie():
+async def bili_cookie():
     options = uc.ChromeOptions()
     options.add_argument(
         "user-data-dir=C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\User Data")
