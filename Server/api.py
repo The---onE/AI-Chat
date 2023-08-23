@@ -56,8 +56,8 @@ embeddingLogger.addHandler(embeddingHandler)
 target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
 
-gpt35_token = 8000
-gpt4_token = 4000
+gpt35_token = 6000
+gpt4_token = 3000
 
 os.environ['OPENAI_API_KEY'] = authorization
 llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
@@ -253,7 +253,7 @@ async def summarize_based_request(index: str) -> Tuple[str, str]:
         template=combine_template, input_variables=["text"])
 
     chain = load_summarize_chain(llm35, chain_type="map_reduce",
-                                 map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=8000)
+                                 map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=gpt35_token)
     result = await chain.arun(docs)
     return result, ''
 
