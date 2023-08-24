@@ -64,7 +64,7 @@ llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
                    temperature=0.7, max_tokens=gpt35_token)
 llm4 = ChatOpenAI(model='gpt-4', temperature=0.7, max_tokens=gpt4_token)
 text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-    separators=['\n\n', '\n', ' ', ''], model_name='gpt-3.5-turbo-16k', chunk_size=gpt35_token, chunk_overlap=300)
+    separators=['\n\n', '\n', ' ', ''], model_name='gpt-3.5-turbo-16k', chunk_size=gpt35_token / 2, chunk_overlap=150)
 embeddings = OpenAIEmbeddings(client=None)
 faiss_dir = 'faissSave/'
 file_dir = 'files/'
@@ -197,7 +197,7 @@ async def based_request(messages: List, db: VectorStore, index: str) -> Tuple[st
 
 async def conversational_based_request(messages: List, db: VectorStore) -> Tuple[str, str]:
     qa = ConversationalRetrievalChain.from_llm(
-        llm35, db.as_retriever(search_type='mmr'), return_source_documents=True)
+        llm35, db.as_retriever(search_type='mmr'), return_source_documents=True, chain_type='stuff', max_tokens_limit=gpt35_token*1.2)
     chat_history = []
     i = 1
     while i < len(messages) - 1:
