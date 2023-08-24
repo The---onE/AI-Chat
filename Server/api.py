@@ -63,8 +63,8 @@ os.environ['OPENAI_API_KEY'] = authorization
 llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
                    temperature=0.7, max_tokens=gpt35_token)
 llm4 = ChatOpenAI(model='gpt-4', temperature=0.7, max_tokens=gpt4_token)
-text_splitter = RecursiveCharacterTextSplitter(
-    separators=['\n\n', '\n'], chunk_size=2000, chunk_overlap=300)
+text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+    separators=['\n\n', '\n', ' ', ''], model_name='gpt-3.5-turbo-16k', chunk_size=gpt35_token, chunk_overlap=300)
 embeddings = OpenAIEmbeddings(client=None)
 faiss_dir = 'faissSave/'
 file_dir = 'files/'
