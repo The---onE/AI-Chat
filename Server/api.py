@@ -188,9 +188,9 @@ async def based_request(messages: List, db: VectorStore, index: str) -> Tuple[st
     query = messages[-1].get('content')
     if query.startswith(tuple(special_prompt_prefix)):
         if query.startswith(summarize_prompt_prefix):
-            return await summarize_based_request(index)
+            return await summarize_based_request(index, query)
         else:
-            return await conversational_based_request(messages, db)
+            return await summarize_based_request(index, query)
     else:
         return await conversational_based_request(messages, db)
 
@@ -230,17 +230,24 @@ async def conversational_based_request(messages: List, db: VectorStore) -> Tuple
     return result_content, source_content
 
 
-async def summarize_based_request(index: str) -> Tuple[str, str]:
+async def summarize_based_request(index: str, query: str) -> Tuple[str, str]:
     loader = TextLoader(f'{faiss_dir}{index}/{index}.txt',
                         autodetect_encoding=True)
     data = loader.load()
     docs = text_splitter.split_documents(data)
+    prompt = query[len(summarize_prompt_prefix):]
 
     map_template = """详细总结下文内容:
 
     {text}
 
     总结内容:"""
+    if not prompt.isspace():
+        map_template = prompt + """:
+
+        {text}
+
+        总结内容:"""
     map_prompt = PromptTemplate(
         template=map_template, input_variables=["text"])
 
@@ -249,6 +256,12 @@ async def summarize_based_request(index: str) -> Tuple[str, str]:
     {text}
 
     总结内容:"""
+    if not prompt.isspace():
+        combine_template = prompt + """:
+
+        {text}
+
+        总结内容:"""
     combine_prompt = PromptTemplate(
         template=combine_template, input_variables=["text"])
 
