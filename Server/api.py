@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 
 from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 
+import langchain
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.schema.document import Document
@@ -59,6 +60,7 @@ authorization = ''
 gpt35_token = 6000
 gpt4_token = 3000
 
+langchain.verbose = True
 os.environ['OPENAI_API_KEY'] = authorization
 llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
                    temperature=0.7, max_tokens=gpt35_token)
@@ -237,38 +239,48 @@ async def summarize_based_request(index: str, query: str) -> Tuple[str, str]:
     docs = text_splitter.split_documents(data)
     prompt = query[len(summarize_prompt_prefix):]
 
-    map_template = """详细总结下文内容:
+    map_template = """详细总结下文各段落的内容:
 
     {text}
 
     总结内容:"""
-    if not prompt.isspace():
-        map_template = prompt + """:
+    if len(prompt.strip()) > 0:
+        map_template = '通过下文内容，' + prompt + """:
 
         {text}
 
-        总结内容:"""
+        你的回答:"""
     map_prompt = PromptTemplate(
         template=map_template, input_variables=["text"])
 
-    combine_template = """详细总结下文各部分内容:
+    combine_template = """根据下文总结并详细叙述各部分内容:
 
     {text}
 
-    总结内容:"""
-    if not prompt.isspace():
-        combine_template = prompt + """:
+    你的回答:"""
+    if len(prompt.strip()) > 0:
+        combine_template = '通过下文内容，详细说明' + prompt + """:
 
         {text}
 
-        总结内容:"""
+        你的回答:"""
     combine_prompt = PromptTemplate(
         template=combine_template, input_variables=["text"])
 
     chain = load_summarize_chain(llm35, chain_type="map_reduce",
                                  map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=gpt35_token)
     result = await chain.arun(docs)
-    return result, ''
+
+    source_content = ''
+    try:
+        contexts = []
+        for doc in docs:
+            contexts.append(doc.page_content)
+        source_content = '\n\n'.join(contexts)
+    except Exception as e:
+        traceback.print_exc()
+        gptLogger.exception(e)
+    return result, source_content
 
 
 async def file_base_request(messages: List) -> Tuple[str, str]:
