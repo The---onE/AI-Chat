@@ -3,7 +3,7 @@
  
 ## 引用
 - Android客户端基于[nohjunh/ChatGPTAndroid](https://github.com/nohjunh/ChatGPTAndroid)修改扩展
-- Python服务端NewBing接口调用[acheong08/EdgeGPT](https://github.com/acheong08/EdgeGPT)，ChatGPT接口通过[Langchain](https://github.com/langchain-ai/langchain)处理请求调用GPT-3.5和GPT-4
+- Python服务端NewBing接口调用[acheong08/EdgeGPT](https://github.com/acheong08/EdgeGPT)，ChatGPT接口通过[langchain-ai/langchain](https://github.com/langchain-ai/langchain)处理请求调用GPT-3.5和GPT-4
 
 # 接口
 | 接口 | 类型 | 功能 |
@@ -14,6 +14,26 @@
 | /file | POST | 上传文件读取后通过Embedding保存到向量数据库 |
 | /url | POST | 上传URL读取网页后通过Embedding保存到向量数据库 |
 | /api/bing | POST | 读取请求内容通过EdgeGPT调用New Bing |
+
+# ChatGPT接口特殊处理
+- `/api/chatgpt`接口会读取`body["message"]`，根据其中特定内容进行特殊处理
+- 若`body["message"][0]["role"]`为`system`，则根据`body["message"][0]["content"]`进行处理，以特定的文档作为文本背景
+
+| content前缀 | content内容 | 功能 |
+| - | - | - |
+| f: | file/url index | 通过index查找上传的文件或URL保存在向量数据库的内容作为文本背景
+| u: | URL | 通过SeleniumURLLoader加载网页，并通过Embedding保存在向量数据库作为文本背景
+| b: | BV号 | 通过BiliBiliLoader加载BV号对应的B站视频字幕，并通过Embedding保存在向量数据库作为文本背景
+| t: | 文本 | 直接将文本通过Embedding保存在向量数据库作为文本背景
+| 无 | system身份 | 不进行特殊处理，直接通过langchain的ChatOpenAI进行对话
+
+- 在有文本背景的情况下，会根据`body["message"][-1]["content"]`进行处理
+
+| content前缀 | content内容 | 功能 |
+| - | - | - |
+| :s | 无 | 通过MapReduceDocumentsChain对文本背景的原文全文进行总结
+| :s | 总结prompt | 通过MapReduceDocumentsChain对文本背景的原文全文通过提示词进行总结
+| 无 | prompt | 通过ConversationalRetrievalChain在向量数据库中寻找相关的文档作为文本背景进行对话
 
 ## Demo
 ![list](https://user-images.githubusercontent.com/11041174/242357695-06ffdbca-b519-42d3-adec-d46608d3e73e.gif)
