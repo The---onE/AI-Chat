@@ -36,6 +36,9 @@
 | 无 | prompt | 通过ConversationalRetrievalChain在向量数据库中寻找相关的文档作为文本背景进行对话
 
 ## Demo
+![url](https://user-images.githubusercontent.com/11041174/264720499-0e148715-8a3c-4dcb-980c-1752251e858d.gif)
+![file](https://user-images.githubusercontent.com/11041174/264720587-70cef6f8-b4f0-4455-878a-8c89306035c4.gif)
+![bilibili](https://user-images.githubusercontent.com/11041174/264720659-6dbe79fb-b9ff-4053-961b-a5e8aaafd597.gif)
 ![list](https://user-images.githubusercontent.com/11041174/242357695-06ffdbca-b519-42d3-adec-d46608d3e73e.gif)
 ![newbing](https://user-images.githubusercontent.com/11041174/242357724-dcdd2c7f-5142-4a64-8b24-bd1ef9aa669a.gif)
 ![chatgpt](https://user-images.githubusercontent.com/11041174/242357734-18332d13-0b4b-44e8-80ea-f4ee1b98adaf.gif)
