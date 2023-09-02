@@ -15,6 +15,10 @@ import com.xmx.ai.chatgpt.repository.GptNetWorkRepository
 import com.xmx.ai.database.entity.ContentEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
 import java.util.LinkedList
 
 class GptViewModel : ViewModel() {
@@ -35,6 +39,10 @@ class GptViewModel : ViewModel() {
     private var _gptInsertCheck = MutableLiveData(false)
     val gptInsertCheck : LiveData<Boolean>
         get() = _gptInsertCheck
+
+    private var _uploadFileCheck = MutableLiveData("")
+    val uploadFileCheck : LiveData<String>
+        get() = _uploadFileCheck
 
     private val _maxContentSize = 8000
 
@@ -176,6 +184,23 @@ class GptViewModel : ViewModel() {
     fun deleteSelectedContent(id : Long) = viewModelScope.launch(Dispatchers.IO) {
         databaseRepository.deleteSelectedContent(id)
         _deleteCheck.postValue(true)
+    }
+
+    fun uploadFileResponse(file: File, index: String) = viewModelScope.launch {
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", file.name, file.asRequestBody("multipart/form-data".toMediaTypeOrNull()))
+            .addFormDataPart("index", index)
+            .build()
+
+        try {
+            val response = netWorkRepository.uploadFileResponse(requestBody)
+            if (!response.message.isNullOrBlank()) {
+                _uploadFileCheck.postValue(response.message)
+            }
+        } catch (e : Exception) {
+            _uploadFileCheck.postValue("上传失败，$e")
+        }
     }
 
 }

@@ -119,13 +119,22 @@
                 android:id="@+id/EDView"
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
-                android:layout_marginRight="45dp"
+                android:layout_marginRight="50dp"
                 android:background="@android:color/transparent"
                 android:fontFamily="@font/msyhmono"
                 android:padding="7dp"
                 android:textColor="@color/white"
                 android:textSize="20sp"
                 app:layout_constraintTop_toTopOf="parent" />
+
+            <ImageButton
+                android:id="@+id/uploadBtn"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="@drawable/uploadbtn_resize"
+                app:layout_constraintEnd_toStartOf="@id/sendBtn"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"/>
 
             <ImageButton
                 android:id="@+id/sendBtn"
