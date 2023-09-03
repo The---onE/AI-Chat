@@ -120,6 +120,13 @@ class GptActivity : AppCompatActivity() {
             }
         }
 
+        viewModel.uploadFileIndex.observe(this) {
+            if (!it.isNullOrBlank()) {
+                binding.loading.visibility = View.INVISIBLE
+                binding.EDViewSystem.setText("f:$it")
+            }
+        }
+
         binding.backBtn.setOnClickListener {
             val intent = Intent(this, ListActivity::class.java)
             startActivity(intent)
@@ -135,27 +142,21 @@ class GptActivity : AppCompatActivity() {
         }
 
         binding.uploadBtn.setOnClickListener {
-            val text = binding.EDViewSystem.text
-            if (text.startsWith("f:") && text.length > 2) {
-                if (ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.READ_EXTERNAL_STORAGE
-                    ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    ActivityCompat.requestPermissions(
-                        this,
-                        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
-                        0
-                    )
-                } else {
-                    openFile()
-                }
+            if (binding.loading.visibility == View.VISIBLE)
+                return@setOnClickListener
+
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE),
+                    0
+                )
             } else {
-                Toast.makeText(
-                    applicationContext,
-                    "请在系统输入框输入\"f:【index】\"再上传",
-                    Toast.LENGTH_SHORT
-                ).show()
+                openFile()
             }
         }
 
@@ -171,6 +172,9 @@ class GptActivity : AppCompatActivity() {
 
 
     private fun postRequest(isContext: Boolean) {
+        if (binding.loading.visibility == View.VISIBLE)
+            return
+
         val prevQuery = binding.EDView.text.toString()
         if (prevQuery.isNotBlank()) {
             binding.loading.visibility = View.VISIBLE
@@ -306,17 +310,20 @@ class GptActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 0 && resultCode == Activity.RESULT_OK) {
             val uploadFileUri = data?.data!!
+            binding.loading.visibility = View.VISIBLE
+            var index = ""
             if (binding.EDViewSystem.text.startsWith("f:")) {
-                val index = binding.EDViewSystem.text.substring(2)
-                CoroutineScope(Dispatchers.IO).launch {
-                    sendPostRequest(uploadFileUri, index)
-                }
+                index = binding.EDViewSystem.text.substring(2)
+            }
+
+            CoroutineScope(Dispatchers.IO).launch {
+                sendPostRequest(uploadFileUri, index)
             }
         }
     }
 
     private suspend fun sendPostRequest(fileUri: Uri?, index: String) {
-        if (fileUri == null || index.isBlank())
+        if (fileUri == null)
             return
 
         try {

@@ -160,7 +160,7 @@ class BingActivity : AppCompatActivity() {
         if (query.isBlank())
             return
 
-        if (isContext && binding.loading.visibility == View.VISIBLE)
+        if (binding.loading.visibility == View.VISIBLE)
             return
 
         binding.loading.visibility = View.VISIBLE

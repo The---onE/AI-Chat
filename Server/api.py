@@ -455,15 +455,25 @@ async def upload_page():
 
 
 @app.post('/file')
-async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
+async def upload_file(file: UploadFile = File(...), index: Optional[str] = Form(None)):
     try:
         if not file or not file.filename:
-            return {'message': '文件上传错误'}
+            return {'message': '文件上传错误', 'index': ''}
+
+        if index == None or len(index.strip()) <= 0:
+            hl = hashlib.md5()
+            while True:
+                content = await file.read(8192)
+                if not content:
+                    await file.seek(0)
+                    break
+                hl.update(content)
+            index = hl.hexdigest()
+
         ext = file.filename.split('.')[-1]
         name = file_dir + index + '.' + ext
-
-        content = await file.read()
         with open(name, 'wb') as f:
+            content = await file.read()
             f.write(content)
 
         if ext == 'txt':
@@ -473,17 +483,17 @@ async def upload_file(file: UploadFile = File(...), index: str = Form(...)):
         elif ext == 'pdf':
             loader = UnstructuredPDFLoader(name)
         else:
-            return {'message': f'{file.filename} not support'}
+            return {'message': f'{file.filename} not support', 'index': ''}
 
         data = loader.load()
         await save_docs_to_db(data, index, file.filename)
 
-        return {'message': f'Save {index} from {file.filename}'}
+        return {'message': f'Save {index} from {file.filename}', 'index': index}
 
     except Exception as e:
         traceback.print_exc()
         gptLogger.exception(e)
-        return {'message': f'{e}'}
+        return {'message': f'{e}', 'index': ''}
 
 
 @app.post('/url')

@@ -10,10 +10,10 @@ android {
 
     defaultConfig {
         applicationId "com.xmx.ai"
-        minSdk 21
+        minSdk 23
         targetSdk 33
         versionCode 1
-        versionName "5.2"
+        versionName "7.1"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }

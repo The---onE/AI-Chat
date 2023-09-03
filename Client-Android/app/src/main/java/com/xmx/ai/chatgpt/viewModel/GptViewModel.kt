@@ -44,6 +44,10 @@ class GptViewModel : ViewModel() {
     val uploadFileCheck : LiveData<String>
         get() = _uploadFileCheck
 
+    private var _uploadFileIndex = MutableLiveData("")
+    val uploadFileIndex : LiveData<String>
+        get() = _uploadFileIndex
+
     private val _maxContentSize = 8000
 
     fun postResponse(query : String, isContext : Boolean, system : String, roomId: Long, start: Int) = viewModelScope.launch {
@@ -197,6 +201,9 @@ class GptViewModel : ViewModel() {
             val response = netWorkRepository.uploadFileResponse(requestBody)
             if (!response.message.isNullOrBlank()) {
                 _uploadFileCheck.postValue(response.message)
+            }
+            if (!response.index.isNullOrBlank()) {
+                _uploadFileIndex.postValue(response.index)
             }
         } catch (e : Exception) {
             _uploadFileCheck.postValue("上传失败，$e")

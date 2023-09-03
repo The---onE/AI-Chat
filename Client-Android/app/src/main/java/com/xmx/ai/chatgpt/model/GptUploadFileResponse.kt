@@ -4,5 +4,8 @@ import com.google.gson.annotations.SerializedName
 
 data class GptUploadFileResponse(
     @SerializedName("message")
-    val message : String?
+    val message : String?,
+
+    @SerializedName("index")
+    val index : String?
 )
