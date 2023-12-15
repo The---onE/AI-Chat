@@ -27,12 +27,13 @@ from langchain.vectorstores import VectorStore, FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 nest_asyncio.apply()
 app = FastAPI()
 
 gptHandler = TimedRotatingFileHandler(
-    'log/gpt.log', 'midnight', encoding='utf-8')
+    'log/gpt/gpt.log', 'midnight', encoding='utf-8')
 gptHandler.setLevel(logging.INFO)
 gptHandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 gptLogger = logging.getLogger('gpt')
@@ -40,12 +41,20 @@ gptLogger.setLevel(logging.INFO)
 gptLogger.addHandler(gptHandler)
 
 bingHandler = TimedRotatingFileHandler(
-    'log/bing.log', 'midnight', encoding='utf-8')
+    'log/bing/bing.log', 'midnight', encoding='utf-8')
 bingHandler.setLevel(logging.INFO)
 bingHandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 bingLogger = logging.getLogger('bing')
 bingLogger.setLevel(logging.INFO)
 bingLogger.addHandler(bingHandler)
+
+geminiHandler = TimedRotatingFileHandler(
+    'log/gemini/gemini.log', 'midnight', encoding='utf-8')
+geminiHandler.setLevel(logging.INFO)
+geminiHandler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+geminiLogger = logging.getLogger('gemini')
+geminiLogger.setLevel(logging.INFO)
+geminiLogger.addHandler(geminiHandler)
 
 embeddingHandler = FileHandler('log/embedding.log', encoding='utf-8')
 embeddingHandler.setLevel(logging.INFO)
@@ -56,15 +65,21 @@ embeddingLogger.addHandler(embeddingHandler)
 
 target_url = 'https://api.openai.com/v1/chat/completions'
 authorization = ''
+gemini_api_key = ''
 
 gpt35_token = 6000
 gpt4_token = 3000
+gemini_token = 12000
+
+if "GOOGLE_API_KEY" not in os.environ:
+    os.environ["GOOGLE_API_KEY"] = gemini_api_key
 
 langchain.verbose = True
 os.environ['OPENAI_API_KEY'] = authorization
 llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
                    temperature=0.7, max_tokens=gpt35_token)
 llm4 = ChatOpenAI(model='gpt-4', temperature=0.7, max_tokens=gpt4_token)
+llm_gemini = ChatGoogleGenerativeAI(model="gemini-pro")
 text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
     separators=['\n\n', '\n', ' ', ''], model_name='gpt-3.5-turbo-16k', chunk_size=gpt35_token / 2, chunk_overlap=150)
 embeddings = OpenAIEmbeddings(client=None)
@@ -430,6 +445,78 @@ async def gpt_langchain_request(request: Request):
             }]
         }
 
+async def langchain_gemini_request(messages: List) -> Tuple[str, str]:
+    contents = []
+    messages.reverse()
+    for msg in messages:
+        role = msg.get('role')
+        content = msg.get('content')
+        if role == 'user':
+            message = HumanMessage(content=content)
+        elif role == 'assistant':
+            message = AIMessage(content=content)
+        else:
+            message = SystemMessage(content=content)
+        contents.append(message)
+
+        if llm_gemini.get_num_tokens_from_messages(contents) > gemini_token:
+            break
+
+    contents.reverse()
+
+    result = await llm_gemini.agenerate([contents])
+
+    return result.generations[0][0].text, ''
+
+@app.post('/api/gemini')
+async def gemini_langchain_request(request: Request):
+    if not release:
+        return {}
+
+    try:
+        body = await request.json()
+        geminiLogger.info(body)
+
+        messages = body.get('messages')
+        result_content = ''
+        source_content = ''
+        result_content, source_content = await langchain_gemini_request(messages)
+
+        geminiLogger.info(result_content)
+        geminiLogger.info('')
+
+        choices = [{
+            'message': {
+                'role': 'assistant',
+                'content': result_content
+            }
+        }]
+
+        if source_content != '':
+            choices.append({
+                'message': {
+                    'role': 'assistant',
+                    'content': source_content
+                }
+            })
+
+        response = {
+            'choices': choices
+        }
+
+        return response
+
+    except Exception as e:
+        traceback.print_exc()
+        geminiLogger.exception(e)
+        return {
+            'choices': [{
+                'message': {
+                    'role': 'assistant',
+                    'content': str(e)
+                }
+            }]
+        }
 
 @app.get('/upload/', response_class=HTMLResponse)
 async def upload_page():
