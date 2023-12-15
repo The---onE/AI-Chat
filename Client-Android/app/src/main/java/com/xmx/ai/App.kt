@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.xmx.ai.bing.view.BingActivity
 import com.xmx.ai.chatgpt.view.GptActivity
+import com.xmx.ai.gemini.view.GeminiActivity
 import timber.log.Timber
 
 class App : Application() {
@@ -55,11 +56,19 @@ class App : Application() {
                 return
             if (type == 2 && GptActivity.instance != null && GptActivity.instance!!.isActive)
                 return
+            if (type == 3 && GeminiActivity.instance != null && GeminiActivity.instance!!.isActive)
+                return
 
             if (NotificationManagerCompat.from(context()).areNotificationsEnabled()) {
-                val intent = if (type == 1) Intent(context(), BingActivity::class.java) else Intent(context(), GptActivity::class.java)
+                val intent =
+                    if (type == 1) Intent(context(), BingActivity::class.java)
+                    else if (type == 3) Intent(context(), GeminiActivity::class.java)
+                    else Intent(context(), GptActivity::class.java)
                 intent.putExtra("roomId", roomId)
-                val content = if (type == 1) "收到NewBing回复" else "收到ChatGPT回复"
+                val content =
+                    if (type == 1) "收到NewBing回复"
+                    else if (type == 3) "收到Gemini回复"
+                    else "收到ChatGPT回复"
 
                 val pendingIntent : PendingIntent = PendingIntent.getActivity(context(), 0, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_CANCEL_CURRENT)
 

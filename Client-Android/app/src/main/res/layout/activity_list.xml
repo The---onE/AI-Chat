@@ -64,23 +64,7 @@
         app:layout_constraintBottom_toBottomOf="parent">
 
         <Button
-            android:id="@+id/newBingBtn"
-            android:layout_width="0dp"
-            android:layout_height="80dp"
-            android:layout_marginLeft="10dp"
-            android:layout_marginRight="10dp"
-            android:layout_marginTop="10dp"
-            android:text="NewBing"
-            android:textAllCaps="false"
-            android:background="@drawable/chat_corner_layout"
-            android:backgroundTint="@color/teal_200"
-            app:layout_constraintLeft_toLeftOf="parent"
-            app:layout_constraintRight_toLeftOf="@+id/newGptBtn"
-            app:layout_constraintTop_toTopOf="parent">
-        </Button>
-
-        <Button
-            android:id="@+id/newGptBtn"
+            android:id="@+id/gptBtn"
             android:layout_width="0dp"
             android:layout_height="80dp"
             android:layout_marginLeft="10dp"
@@ -90,11 +74,24 @@
             android:textAllCaps="false"
             android:background="@drawable/chat_corner_layout"
             android:backgroundTint="@color/teal_200"
-            app:layout_constraintRight_toRightOf="parent"
-            app:layout_constraintLeft_toRightOf="@+id/newBingBtn"
-            app:layout_constraintTop_toTopOf="parent">
+            app:layout_constraintLeft_toLeftOf="parent"
+            app:layout_constraintRight_toLeftOf="@+id/geminiBtn"
+            app:layout_constraintTop_toTopOf="parent"/>
 
-        </Button>
+        <Button
+            android:id="@+id/geminiBtn"
+            android:layout_width="0dp"
+            android:layout_height="80dp"
+            android:layout_marginLeft="10dp"
+            android:layout_marginRight="10dp"
+            android:layout_marginTop="10dp"
+            android:text="Gemini"
+            android:textAllCaps="false"
+            android:background="@drawable/chat_corner_layout"
+            android:backgroundTint="@color/teal_200"
+            app:layout_constraintRight_toRightOf="parent"
+            app:layout_constraintLeft_toRightOf="@+id/gptBtn"
+            app:layout_constraintTop_toTopOf="parent"/>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 

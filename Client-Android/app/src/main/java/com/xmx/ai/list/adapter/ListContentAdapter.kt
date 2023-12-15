@@ -30,7 +30,10 @@ class ListContentAdapter(val context : Context, private val dataSet : List<Conte
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        holder.TVRoomType.text = if (dataSet[position].roomType == 1) "NewBing" else "ChatGPT"
+        holder.TVRoomType.text =
+            if (dataSet[position].roomType == 1) "NewBing"
+            else if (dataSet[position].roomType == 3) "Gemini"
+            else "ChatGPT"
         holder.TVRoomStart.text = dataSet[position].content
 
         holder.layout.setOnClickListener {view->

@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.xmx.ai.App
 import com.xmx.ai.bing.view.BingActivity
 import com.xmx.ai.chatgpt.view.GptActivity
+import com.xmx.ai.gemini.view.GeminiActivity
 import com.xmx.ai.database.entity.ContentEntity
 import com.xmx.ai.databinding.ActivityListBinding
 import com.xmx.ai.list.adapter.ListContentAdapter
@@ -64,13 +65,13 @@ class ListActivity : AppCompatActivity() {
             }
         }
 
-        binding.newBingBtn.setOnClickListener {
-            val intent = Intent(this@ListActivity, BingActivity::class.java)
+        binding.gptBtn.setOnClickListener {
+            val intent = Intent(this@ListActivity, GptActivity::class.java)
             startActivity(intent)
         }
 
-        binding.newGptBtn.setOnClickListener {
-            val intent = Intent(this@ListActivity, GptActivity::class.java)
+        binding.geminiBtn.setOnClickListener {
+            val intent = Intent(this@ListActivity, GeminiActivity::class.java)
             startActivity(intent)
         }
 
@@ -109,6 +110,7 @@ class ListActivity : AppCompatActivity() {
             finish()
             BingActivity.instance?.finish()
             GptActivity.instance?.finish()
+            GeminiActivity.instance?.finish()
         }
     }
 
@@ -135,8 +137,11 @@ class ListActivity : AppCompatActivity() {
             override fun onClick(view: View, position: Int) {
                 val entity = contentDataList[position]
                 val intent =
-                    if (entity.roomType == 1) Intent(this@ListActivity, BingActivity::class.java)
-                    else Intent(this@ListActivity, GptActivity::class.java)
+                    when (entity.roomType) {
+                        1 -> Intent(this@ListActivity, BingActivity::class.java)
+                        3 -> Intent(this@ListActivity, GeminiActivity::class.java)
+                        else -> Intent(this@ListActivity, GptActivity::class.java)
+                    }
                 intent.putExtra("roomId", contentDataList[position].roomId)
                 startActivity(intent)
             }
