@@ -462,6 +462,12 @@ async def langchain_gemini_request(messages: List) -> Tuple[str, str]:
         if llm_gemini.get_num_tokens_from_messages(contents) > gemini_token:
             break
 
+    for content in contents[::-1]:
+        if not isinstance(content, HumanMessage):
+            del contents[-1]
+        else:
+            break
+
     contents.reverse()
 
     result = await llm_gemini.agenerate([contents])
