@@ -10,7 +10,7 @@ from langchain.vectorstores import VectorStore, FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains.summarize import load_summarize_chain
 from langchain.prompts import PromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_gemini_chat_models import ChatGoogleGenerativeAI
 
 import os
 import hashlib
@@ -18,8 +18,14 @@ import json
 import traceback
 import asyncio
 from logging import Handler
+from enum import Enum
 from typing import List, Tuple, Optional
 from fastapi import UploadFile
+
+
+class ModelType(Enum):
+    GPT = 1,
+    GEMINI = 2
 
 
 class LangchainClient:
@@ -72,23 +78,23 @@ class LangchainClient:
         os.environ['GOOGLE_API_KEY'] = key
         self.llm_gemini = ChatGoogleGenerativeAI(model="gemini-pro")
 
-    async def request(self, messages: List) -> Tuple[str, str]:
+    async def request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         if messages[0].get('role') == 'system' and messages[0].get('content').startswith(tuple(self.context_prefix)):
             if messages[0].get('content').startswith(self.file_context_prefix):
-                result_content, source_content = await self.file_base_request(messages)
+                result_content, source_content = await self.file_base_request(messages, type)
             elif messages[0].get('content').startswith(self.bilibili_context_prefix):
                 result_content, source_content = await self.bilibili_base_request(
-                    messages)
+                    messages, type)
             elif messages[0].get('content').startswith(self.text_context_prefix):
-                result_content, source_content = await self.text_base_request(messages)
+                result_content, source_content = await self.text_base_request(messages, type)
             else:
-                result_content, source_content = await self.url_base_request(messages)
+                result_content, source_content = await self.url_base_request(messages, type)
         else:
-            result_content, source_content = await self.langchain_request(messages)
+            result_content, source_content = await self.langchain_request(messages, type)
 
         return result_content, source_content
 
-    async def langchain_request(self, messages: List) -> Tuple[str, str]:
+    async def langchain_request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         contents = []
         messages.reverse()
         for msg in messages:
@@ -99,36 +105,61 @@ class LangchainClient:
             elif role == 'assistant':
                 message = AIMessage(content=content)
             else:
-                message = SystemMessage(content=content)
+                if type == ModelType.GPT:
+                    message = SystemMessage(content=content)
+                elif type == ModelType.GEMINI:
+                    continue
             contents.append(message)
 
-            if self.use_gpt4 and self.llm4.get_num_tokens_from_messages(contents) > self.gpt4_token:
-                break
-            if not self.use_gpt4 and self.llm35.get_num_tokens_from_messages(contents) > self.gpt35_token:
-                break
+            if type == ModelType.GPT:
+                if self.use_gpt4 and self.llm4.get_num_tokens_from_messages(contents) > self.gpt4_token:
+                    break
+                if not self.use_gpt4 and self.llm35.get_num_tokens_from_messages(contents) > self.gpt35_token:
+                    break
+            elif type == ModelType.GEMINI:
+                if self.llm_gemini.get_num_tokens_from_messages(contents) > self.gemini_token:
+                    break
+
+        if type == ModelType.GEMINI:
+            for content in contents[::-1]:
+                if not isinstance(content, HumanMessage):
+                    del contents[-1]
+                else:
+                    break
 
         contents.reverse()
 
-        if self.use_gpt4:
-            result = await self.llm4.agenerate([contents])
-        else:
-            result = await self.llm35.agenerate([contents])
+        if type == ModelType.GPT:
+            if self.use_gpt4:
+                result = await self.llm4.agenerate([contents])
+            else:
+                result = await self.llm35.agenerate([contents])
+        elif type == ModelType.GEMINI:
+            result = await self.llm_gemini.agenerate([contents])
 
         return result.generations[0][0].text, ''
 
-    async def based_request(self, messages: List, db: VectorStore, index: str) -> Tuple[str, str]:
+    async def based_request(self, messages: List, db: VectorStore, index: str, type: ModelType) -> Tuple[str, str]:
         query = messages[-1].get('content')
         if query.startswith(tuple(self.special_prompt_prefix)):
             if query.startswith(self.summarize_prompt_prefix):
-                return await self.summarize_based_request(index, query)
+                return await self.summarize_based_request(index, query, type)
             else:
-                return await self.summarize_based_request(index, query)
+                return await self.summarize_based_request(index, query, type)
         else:
-            return await self.conversational_based_request(messages, db)
+            return await self.conversational_based_request(messages, db, type)
 
-    async def conversational_based_request(self, messages: List, db: VectorStore) -> Tuple[str, str]:
-        qa = ConversationalRetrievalChain.from_llm(
-            self.llm35, db.as_retriever(search_type='mmr'), return_source_documents=True, chain_type='stuff', max_tokens_limit=self.gpt35_token*1.2)
+    async def conversational_based_request(self, messages: List, db: VectorStore, type: ModelType) -> Tuple[str, str]:
+        if type == ModelType.GPT:
+            llm = self.llm35
+            limit = self.gpt35_token*1.2
+        elif type == ModelType.GEMINI:
+            llm = self.llm_gemini
+            limit = self.gemini_token*1.2
+
+        qa = ConversationalRetrievalChain.from_llm(llm, db.as_retriever(
+            search_type='mmr'), return_source_documents=True, chain_type='stuff', max_tokens_limit=limit)
+
         chat_history = []
         i = 1
         while i < len(messages) - 1:
@@ -160,20 +191,25 @@ class LangchainClient:
             self.gptLogger.exception(e)
         return result_content, source_content
 
-    async def summarize_based_request(self, index: str, query: str) -> Tuple[str, str]:
+    async def summarize_based_request(self, index: str, query: str, type: ModelType) -> Tuple[str, str]:
+        if type == ModelType.GPT:
+            llm = self.llm35
+        elif type == ModelType.GEMINI:
+            llm = self.llm_gemini
+
         loader = TextLoader(f'{self.faiss_dir}{index}/{index}.txt',
                             autodetect_encoding=True)
         data = loader.load()
         docs = self.text_splitter.split_documents(data)
         prompt = query[len(self.summarize_prompt_prefix):]
 
-        map_template = """详细总结下文各段落的内容:
+        map_template = """详细总结下文各段落的内容，如果无法总结则重复下文内容:
 
         {text}
 
         总结内容:"""
         if len(prompt.strip()) > 0:
-            map_template = '通过下文内容，' + prompt + """:
+            map_template = '通过下文内容，' + prompt + '，如果无法回答则重复下文内容' + """:
 
             {text}
 
@@ -181,13 +217,13 @@ class LangchainClient:
         map_prompt = PromptTemplate(
             template=map_template, input_variables=["text"])
 
-        combine_template = """根据下文总结并详细叙述各部分内容:
+        combine_template = """根据下文总结并详细叙述各部分内容，如果无法总结则重复下文内容:
 
         {text}
 
         你的回答:"""
         if len(prompt.strip()) > 0:
-            combine_template = '通过下文内容，详细说明' + prompt + """:
+            combine_template = '通过下文内容，详细说明' + prompt + '，如果无法说明则重复下文内容' + """:
 
             {text}
 
@@ -195,7 +231,7 @@ class LangchainClient:
         combine_prompt = PromptTemplate(
             template=combine_template, input_variables=["text"])
 
-        chain = load_summarize_chain(self.llm35, chain_type="map_reduce",
+        chain = load_summarize_chain(llm, chain_type="map_reduce",
                                      map_prompt=map_prompt, combine_prompt=combine_prompt, token_max=self.gpt35_token)
         result = await chain.arun(docs)
 
@@ -210,13 +246,13 @@ class LangchainClient:
             self.gptLogger.exception(e)
         return result, source_content
 
-    async def file_base_request(self, messages: List) -> Tuple[str, str]:
+    async def file_base_request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         content = messages[0].get('content')
         context = content[len(self.file_context_prefix):]
         db = FAISS.load_local(self.faiss_dir + context, self.embeddings)
-        return await self.based_request(messages, db, context)
+        return await self.based_request(messages, db, context, type)
 
-    async def url_base_request(self, messages: List) -> Tuple[str, str]:
+    async def url_base_request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         content = messages[0].get('content')
         url = content[len(self.url_context_prefix):]
         hl = hashlib.md5()
@@ -227,9 +263,9 @@ class LangchainClient:
             db = await self.load_url(url, context)
         else:
             db = FAISS.load_local(path, self.embeddings)
-        return await self.based_request(messages, db, context)
+        return await self.based_request(messages, db, context, type)
 
-    async def bilibili_base_request(self, messages: List) -> Tuple[str, str]:
+    async def bilibili_base_request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         content = messages[0].get('content')
         url = content[len(self.bilibili_context_prefix):]
         hl = hashlib.md5()
@@ -242,9 +278,9 @@ class LangchainClient:
                 return '该视频未生成字幕', ''
         else:
             db = FAISS.load_local(path, self.embeddings)
-        return await self.based_request(messages, db, context)
+        return await self.based_request(messages, db, context, type)
 
-    async def text_base_request(self, messages: List) -> Tuple[str, str]:
+    async def text_base_request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         content = messages[0].get('content')
         text = content[len(self.text_context_prefix):]
         hl = hashlib.md5()
@@ -257,7 +293,7 @@ class LangchainClient:
             db = await self.save_docs_to_db(data, context, first_line)
         else:
             db = FAISS.load_local(path, self.embeddings)
-        return await self.based_request(messages, db, context)
+        return await self.based_request(messages, db, context, type)
 
     async def load_url(self, url: str, index: str) -> VectorStore:
         loader = SeleniumURLLoader(urls=[url], headless=False)
@@ -288,35 +324,6 @@ class LangchainClient:
                 txt.write('\n\n')
             txt.close()
         return db
-
-    async def langchain_gemini_request(self, messages: List) -> Tuple[str, str]:
-        contents = []
-        messages.reverse()
-        for msg in messages:
-            role = msg.get('role')
-            content = msg.get('content')
-            if role == 'user':
-                message = HumanMessage(content=content)
-            elif role == 'assistant':
-                message = AIMessage(content=content)
-            else:
-                message = SystemMessage(content=content)
-            contents.append(message)
-
-            if self.llm_gemini.get_num_tokens_from_messages(contents) > self.gemini_token:
-                break
-
-        for content in contents[::-1]:
-            if not isinstance(content, HumanMessage):
-                del contents[-1]
-            else:
-                break
-
-        contents.reverse()
-
-        result = await self.llm_gemini.agenerate([contents])
-
-        return result.generations[0][0].text, ''
 
     async def upload_file(self, file: UploadFile):
         if index == None or len(index.strip()) <= 0:

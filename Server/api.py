@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse
 
 from EdgeGPT.EdgeGPT import Chatbot, ConversationStyle
 
-from langchain_client import LangchainClient
+from langchain_client import LangchainClient, ModelType
 
 nest_asyncio.apply()
 app = FastAPI()
@@ -115,7 +115,7 @@ async def gpt_langchain_request(request: Request):
         gptLogger.info(body)
 
         messages = body.get('messages')
-        result_content, source_content = await langchain_client.request(messages)
+        result_content, source_content = await langchain_client.request(messages, ModelType.GPT)
 
         gptLogger.info(result_content)
         gptLogger.info('')
@@ -161,7 +161,7 @@ async def gemini_langchain_request(request: Request):
         geminiLogger.info(body)
 
         messages = body.get('messages')
-        result_content, source_content = await langchain_client.langchain_gemini_request(messages)
+        result_content, source_content = await langchain_client.request(messages, ModelType.GEMINI)
 
         geminiLogger.info(result_content)
         geminiLogger.info('')
