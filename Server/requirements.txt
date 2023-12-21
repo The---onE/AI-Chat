@@ -17,3 +17,4 @@ transformers
 bilibili-api-python
 faiss-cpu
 unstructured[all-docs]
+undetected_chromedriver

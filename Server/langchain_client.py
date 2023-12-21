@@ -55,16 +55,8 @@ class LangchainClient:
         self.embeddingLogger = embeddingLogger
         self.gptLogger = gptLogger
         self.geminiLogger = geminiLogger
-
-        os.environ['OPENAI_API_KEY'] = openai_api_key
-        os.environ["GOOGLE_API_KEY"] = google_api_key
-
-        self.embeddings = OpenAIEmbeddings(client=None)
-        self.llm35 = ChatOpenAI(model='gpt-3.5-turbo-16k',
-                                temperature=0.7, max_tokens=self.gpt35_token)
-        self.llm4 = ChatOpenAI(
-            model='gpt-4', temperature=0.7, max_tokens=self.gpt4_token)
-        self.llm_gemini = ChatGoogleGenerativeAI(model="gemini-pro")
+        self.update_openai_api_key(openai_api_key)
+        self.update_google_api_key(google_api_key)
 
     def update_openai_api_key(self, key: str):
         os.environ['OPENAI_API_KEY'] = key
@@ -76,7 +68,8 @@ class LangchainClient:
 
     def update_google_api_key(self, key: str):
         os.environ['GOOGLE_API_KEY'] = key
-        self.llm_gemini = ChatGoogleGenerativeAI(model="gemini-pro")
+        self.llm_gemini = ChatGoogleGenerativeAI(
+            model='gemini-pro', temperature=0.7, max_output_tokens=self.gemini_token)
 
     async def request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         if messages[0].get('role') == 'system' and messages[0].get('content').startswith(tuple(self.context_prefix)):
