@@ -181,7 +181,10 @@ class LangchainClient:
             source_content = '\n\n'.join(contexts)
         except Exception as e:
             traceback.print_exc()
-            self.gptLogger.exception(e)
+            if type == ModelType.GPT:
+                self.gptLogger.exception(e)
+            elif type == ModelType.GEMINI:
+                self.geminiLogger.exception(e)
         return result_content, source_content
 
     async def summarize_based_request(self, index: str, query: str, type: ModelType) -> Tuple[str, str]:
@@ -236,7 +239,10 @@ class LangchainClient:
             source_content = '\n\n'.join(contexts)
         except Exception as e:
             traceback.print_exc()
-            self.gptLogger.exception(e)
+            if type == ModelType.GPT:
+                self.gptLogger.exception(e)
+            elif type == ModelType.GEMINI:
+                self.geminiLogger.exception(e)
         return result, source_content
 
     async def file_base_request(self, messages: List, type: ModelType) -> Tuple[str, str]:
