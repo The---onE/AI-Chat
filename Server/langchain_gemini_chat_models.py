@@ -329,9 +329,9 @@ def _messages_to_genai_contents(
                 # messages[-1]["parts"].extend(parts)
                 # continue
                 if role == "user":
-                    messages.append({"role": "model", "parts": ['']})
+                    messages.append({"role": "model", "parts": ['OK']})
                 else:
-                    messages.append({"role": "user", "parts": ['']})
+                    messages.append({"role": "user", "parts": ['OK']})
                     
         messages.append({"role": role, "parts": parts})
     return messages
