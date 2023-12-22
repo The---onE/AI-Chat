@@ -150,8 +150,17 @@ class LangchainClient:
             llm = self.llm_gemini
             limit = self.gemini_token*1.2
 
+        _template = """通过给出的对话历史和追加的问题, 改写追加的问题成为一个独立的问题, 用对话历史的语言。
+        对话历史:
+```
+        {chat_history}
+```
+        追加的问题: {question}
+        独立的问题:"""
+        condense_question_prompt = PromptTemplate.from_template(_template)
+
         qa = ConversationalRetrievalChain.from_llm(llm, db.as_retriever(
-            search_type='mmr'), return_source_documents=True, chain_type='stuff', max_tokens_limit=limit)
+            search_type='mmr'), return_source_documents=True, chain_type='stuff', max_tokens_limit=limit, condense_question_prompt=condense_question_prompt)
 
         chat_history = []
         i = 1
