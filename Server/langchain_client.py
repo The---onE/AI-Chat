@@ -199,30 +199,30 @@ class LangchainClient:
         docs = self.text_splitter.split_documents(data)
         prompt = query[len(self.summarize_prompt_prefix):]
 
-        map_template = """详细总结下文各段落的内容，如果无法总结则重复下文内容:
-
+        map_template = """详细总结下文各段落的内容，如果无法总结则重复下文全部内容，忽略无法总结的部分:
+```
         {text}
-
-        总结内容:"""
+```
+        你的回答:"""
         if len(prompt.strip()) > 0:
-            map_template = '通过下文内容，' + prompt + '，如果无法回答则重复下文内容' + """:
-
+            map_template = '通过下文内容，' + prompt + '，如果无法回答则重复下文全部内容，忽略无法总结的部分' + """:
+```
             {text}
-
+```
             你的回答:"""
         map_prompt = PromptTemplate(
             template=map_template, input_variables=["text"])
 
-        combine_template = """根据下文总结并详细叙述各部分内容，如果无法总结则重复下文内容:
-
+        combine_template = """精要地重复下文全部内容，忽略无法总结的部分:
+```
         {text}
-
+```
         你的回答:"""
         if len(prompt.strip()) > 0:
-            combine_template = '通过下文内容，详细说明' + prompt + '，如果无法说明则重复下文内容' + """:
-
+            combine_template = '通过下文内容，详细说明' + prompt + '，如果无法说明则重复下文全部内容，忽略无法总结的部分' + """:
+```
             {text}
-
+ ```
             你的回答:"""
         combine_prompt = PromptTemplate(
             template=combine_template, input_variables=["text"])
