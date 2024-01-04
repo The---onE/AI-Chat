@@ -9,7 +9,12 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import VectorStore, FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains.summarize import load_summarize_chain
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts.chat import (
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    SystemMessagePromptTemplate,
+)
 from langchain_gemini_chat_models import ChatGoogleGenerativeAI
 
 import os
@@ -69,7 +74,7 @@ class LangchainClient:
     def update_google_api_key(self, key: str):
         os.environ['GOOGLE_API_KEY'] = key
         self.llm_gemini = ChatGoogleGenerativeAI(
-            model='gemini-pro', temperature=0.7, max_output_tokens=self.gemini_token)
+            model='gemini-pro', temperature=0.7, max_output_tokens=self.gemini_token, convert_system_message_to_human=True)
 
     async def request(self, messages: List, type: ModelType) -> Tuple[str, str]:
         if messages[0].get('role') == 'system' and messages[0].get('content').startswith(tuple(self.context_prefix)):
@@ -159,8 +164,22 @@ class LangchainClient:
         独立的问题:"""
         condense_question_prompt = PromptTemplate.from_template(_template)
 
-        qa = ConversationalRetrievalChain.from_llm(llm, db.as_retriever(
-            search_type='mmr'), return_source_documents=True, chain_type='stuff', max_tokens_limit=limit, condense_question_prompt=condense_question_prompt)
+        system_template = """根据下文内容回答问题。如果无法回答，回复“我不知道”，不要编造答案。
+```
+        {context}
+```
+        """
+        combine_docs_chain_messages = [
+            SystemMessagePromptTemplate.from_template(system_template),
+            HumanMessagePromptTemplate.from_template("{question}"),
+        ]
+        combine_docs_chain_prompt = ChatPromptTemplate.from_messages(
+            combine_docs_chain_messages)
+
+        qa = ConversationalRetrievalChain.from_llm(llm, db.as_retriever(search_type='mmr'), chain_type='stuff',
+                                                   return_source_documents=True, return_generated_question=True,
+                                                   max_tokens_limit=limit, condense_question_prompt=condense_question_prompt,
+                                                   combine_docs_chain_kwargs={'prompt': combine_docs_chain_prompt})
 
         chat_history = []
         i = 1
@@ -183,11 +202,14 @@ class LangchainClient:
         result_content = result['answer']
         source_content = ''
         try:
+            generated_question = result["generated_question"]
+            source_content = generated_question
+
             source_docs = result['source_documents']
             contexts = []
             for doc in source_docs:
                 contexts.append(doc.page_content)
-            source_content = '\n\n'.join(contexts)
+            source_content += '\n\n' + '\n\n'.join(contexts)
         except Exception as e:
             traceback.print_exc()
             if type == ModelType.GPT:
