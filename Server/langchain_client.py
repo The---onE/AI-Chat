@@ -15,7 +15,7 @@ from langchain_core.prompts.chat import (
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
 )
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_gemini_chat_models import ChatGoogleGenerativeAI
 
 import os
 import hashlib
