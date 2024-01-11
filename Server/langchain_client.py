@@ -1,12 +1,12 @@
 import langchain
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.vectorstores import VectorStore, FAISS
+from langchain_community.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
+from bilibili import BiliBiliLoader
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.schema.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import TextLoader, Docx2txtLoader, UnstructuredPDFLoader, SeleniumURLLoader
-from bilibili import BiliBiliLoader
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import VectorStore, FAISS
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains.summarize import load_summarize_chain
 from langchain_core.prompts import PromptTemplate
@@ -15,7 +15,7 @@ from langchain_core.prompts.chat import (
     HumanMessagePromptTemplate,
     SystemMessagePromptTemplate,
 )
-from langchain_gemini_chat_models import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 import os
 import hashlib
